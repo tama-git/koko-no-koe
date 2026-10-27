@@ -1,58 +1,84 @@
-# koko-no-koe
+# 旅日記 / koko-no-koe
 
-## 旅日記：iPhone表示テスト
+iPhoneアプリと、PCブラウザーで使う管理者画面の開発リポジトリです。現在は両方とも表示確認用の仮画面です。
 
-タイトルと「タップして確認」ボタンだけの仮画面です。ボタンを押すと回数が増えます。データ保存・地図・位置情報・写真の機能はまだありません。
+## フォルダー
 
-何も準備していないPCから始める人は、[環境構築マニュアル](環境構築マニュアル_Windows_iPhone.md)を上から順番に進めてください。[PDF版](docs/環境構築マニュアル_Windows_iPhone.pdf)もあります。
+```text
+koko-no-koe/
+├─ mobile/            モバイル側
+│  ├─ frontend/       iPhoneアプリ（React Native・Expo）
+│  └─ backend/        モバイル向け処理の置き場所（未実装）
+├─ admin/             管理者側
+│  ├─ frontend/       管理者画面のHTML・CSS
+│  └─ backend/        管理者画面を動かすDjango
+├─ docs/              説明資料・チーム向け手順書
+├─ .gitignore
+├─ LICENSE
+└─ README.md
+```
 
-新規作成やZIP共有の補足は、[iPhone表示テスト：初めての準備手順](iPhone表示テスト_初めての準備手順.md)にまとめています。
+管理者画面のHTML・CSSは `admin/frontend/` にあります。Djangoがこれを読み込んで表示するので、管理者側を動かすためのNode.jsサーバーは不要です。
 
-GitHubから取得して各自のiPhoneでテストする流れは、[GitHub共有とiPhoneテスト：チーム手順](GitHub共有とiPhoneテスト_チーム手順.md)にまとめています。
+`mobile/backend/` は説明ファイルだけの準備用フォルダーです。iPhoneと管理者側で共有するAPI・データベースの構成は、実装前に決定します。
 
-共有リポジトリ：https://github.com/tama-git/koko-no-koe
+## チームの人が最初に読む資料
 
-GitHubで同じソースを共有し、各自のPCでExpoを起動して、自分のiPhoneで確認します。PCとiPhoneは、その人自身の同じExpoアカウントを使います。
+- **すでにiPhoneで表示できた人**：[チームの起動手順](docs/01_チームの起動手順.md)
+- **これから準備する人**：[初めての環境構築](docs/02_初めての環境構築.md)
+- **編集する場所・GitHub共有の方法**：[フォルダー構成と開発手順](docs/03_フォルダー構成と開発手順.md)
 
-## 起動する
+説明資料は [docs](docs/README.md) にまとめています。旧構成の手順書は `docs/archive/` に保管しています。通常は上の最新版を使ってください。
 
-Visual Studio Codeでこのフォルダーを開きます。共有版を初めて取得したときは、ターミナルで必要な部品をインストールします。
+## 起動の早見表（Windows PowerShell）
+
+以下はリポジトリのルート（このREADMEがある場所）から実行します。コードは1行ずつ入力し、エラーが出たら次へ進まず内容を確認してください。
+
+### ターミナル①：iPhone
 
 ```powershell
+Set-Location .\mobile\frontend
 npm.cmd ci
-```
-
-PCの開発ツールとiPhoneのExpo Goは、同じExpoアカウントでログインします。PCでは次を実行して、ブラウザでのログイン・承認を完了します。
-
-```powershell
-npx.cmd expo login --browser
 npx.cmd expo whoami
-```
-
-ユーザー名が表示されたら起動します。ログイン済みの場合は、ログイン操作を繰り返す必要はありません。
-
-```powershell
 npx.cmd expo start --go --lan
 ```
 
-PCとiPhoneを同じWi-Fiにつなぎ、PCに表示されるQRコードをiPhoneの標準カメラで読み取ってExpo Goで開きます。Expo Goからローカルネットワークへのアクセス許可を求められたら許可します。PCのターミナルは開いたままにしてください。
+`npm.cmd ci` は初回または依存関係が変わったときに実行します。ログイン済みであれば、毎回ログインする必要はありません。`Not logged in` の場合は [起動手順](docs/01_チームの起動手順.md) のログイン手順を使います。PCとiPhoneは各自の同じExpoアカウント・同じWi-Fiで接続してください。
 
-接続できない場合はエラー画面と、PC側のターミナルの表示を確認します。学校のWi-Fiでは端末同士の通信が制限されている場合があるため、その場合は別の接続方法を検討します。
+### ターミナル②：管理者用の仮ページ
 
-Expo GoとアプリのSDKバージョンが合わない場合は、エラーに表示された対応バージョンに合わせて調整します。このプロジェクトはExpo SDK 58で作成しました。
+Python 3.13のインストール後、新しいターミナルをリポジトリのルートで開いて実行します。
 
-終了するときはPCのターミナルで `Ctrl+C` を押します。
+```powershell
+Set-Location .\admin\backend
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000
+```
 
-## 編集する場所
+仮想環境の作成は初回のみ、部品のインストールは初回または `requirements.txt` の変更時に行います。仮想環境を有効化する操作は不要です。
 
-- `App.tsx`：仮画面の表示とボタンの動作
-- `app.json`：アプリ名などの設定
+PCのChromeまたはEdgeで **http://127.0.0.1:8000/** を開きます。Expoアカウントや管理者用のパスワードは、この仮ページでは使いません。
 
-## PCでの確認
+## 現在確認できること
+
+- iPhone：タイトルの表示、ボタンでタップ回数が増えること
+- 管理者：サンプル通報の一覧、状態の絞り込み、詳細への移動、一覧に戻る操作
+
+管理者の認証・権限、実際の投稿・通報の保存、投稿の非表示、iPhoneとのデータ共有は未実装です。管理者ページは架空データを使うローカル開発専用で、インターネット公開用ではありません。
+
+## 確認コマンド
+
+`mobile/frontend/` で：
 
 ```powershell
 npx.cmd tsc --noEmit
 npx.cmd expo export --platform ios --output-dir dist
 ```
 
-iPhone上での表示とタップ操作は実機で別途確認します。EAS Buildの設定はまだ行っていません。
+`admin/backend/` で：
+
+```powershell
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test
+```

@@ -262,3 +262,13 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Nested mobile application
+/mobile/frontend/ios/
+/mobile/frontend/android/
+
+# Django local development
+/admin/backend/.venv/
+/admin/backend/db.sqlite3
+/admin/backend/staticfiles/
+/admin/backend/.env

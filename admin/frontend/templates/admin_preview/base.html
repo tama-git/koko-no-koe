@@ -1,0 +1,29 @@
+{% load static %}
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}管理者用の仮ページ{% endblock %} | 旅日記</title>
+  <link rel="icon" type="image/svg+xml" href="{% static 'admin_preview/favicon.svg' %}">
+  <link rel="stylesheet" href="{% static 'admin_preview/styles.css' %}">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="{% url 'preview:dashboard' %}"><span class="brand-mark" aria-hidden="true">旅</span><span>旅日記<small>管理コンソール</small></span></a>
+    <p class="nav-label">ワークスペース</p>
+    <nav aria-label="メインナビゲーション">
+      <a class="nav-item {% block overview_class %}{% endblock %}" href="{% url 'preview:dashboard' %}"><span aria-hidden="true">▦</span> 概要</a>
+      <a class="nav-item {% block reports_class %}{% endblock %}" href="{% url 'preview:dashboard' %}#reports"><span aria-hidden="true">☷</span> サンプル通報</a>
+    </nav>
+    <div class="sidebar-footer"><span class="connection-dot"></span> ローカル環境<small>画面確認用のプレビュー</small></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><span>旅日記 / 管理者</span><span class="preview-pill">PREVIEW <span>仮画面</span></span></header>
+    <main id="main-content">
+      {% block content %}{% endblock %}
+      <footer class="page-footer">旅日記 · 管理者画面プレビュー <span>すべて架空のサンプルデータです。</span></footer>
+    </main>
+  </div>
+</body>
+</html>

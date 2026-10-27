@@ -1,0 +1,23 @@
+{% extends 'admin_preview/base.html' %}
+{% block overview_class %}active{% endblock %}
+{% block content %}
+  <div class="page-heading"><div><p class="eyebrow">OVERVIEW</p><h1>管理者用の仮ページ</h1><p class="subtitle">旅の記録を見守る、管理画面の最初の一歩。</p></div><span class="environment-label">表示テスト</span></div>
+  <section class="notice" aria-label="仮画面について"><span class="notice-icon" aria-hidden="true">i</span><div><strong>Djangoとの接続に成功しました。</strong><p>一覧・絞り込み・詳細表示を確認できます。管理者ログイン、データ保存、投稿の非表示機能はまだ実装していません。</p></div></section>
+  <section class="stat-grid" aria-label="サンプル通報の件数">
+    <article class="stat-card"><span class="stat-label">サンプル通報</span><strong>{{ total_count }}<small>件</small></strong><p>表示確認用の通報一覧</p></article>
+    <article class="stat-card"><span class="stat-label"><span class="small-dot amber"></span> 未確認</span><strong>{{ pending_count }}<small>件</small></strong><p>確認前の状態のサンプル</p></article>
+    <article class="stat-card"><span class="stat-label"><span class="small-dot green"></span> 確認済み</span><strong>{{ reviewed_count }}<small>件</small></strong><p>確認後の状態のサンプル</p></article>
+  </section>
+  <section class="panel" id="reports">
+    <div class="panel-heading"><div><h2>サンプル通報一覧</h2><p>「詳細を見る」から、投稿内容の仮画面へ進めます。</p></div><span class="sample-label">サンプルデータ</span></div>
+    <nav class="filter-tabs" aria-label="通報の状態で絞り込み">
+      <a href="?status=all#reports" {% if active_filter == 'all' %}class="selected" aria-current="page"{% endif %}>すべて <span>{{ total_count }}</span></a>
+      <a href="?status=pending#reports" {% if active_filter == 'pending' %}class="selected" aria-current="page"{% endif %}>未確認 <span>{{ pending_count }}</span></a>
+      <a href="?status=reviewed#reports" {% if active_filter == 'reviewed' %}class="selected" aria-current="page"{% endif %}>確認済み <span>{{ reviewed_count }}</span></a>
+    </nav>
+    <div class="table-scroll"><table><caption class="sr-only">架空の投稿に対するサンプル通報</caption><thead><tr><th scope="col">対象の投稿</th><th scope="col">通報理由</th><th scope="col">状態</th><th scope="col"><span class="sr-only">操作</span></th></tr></thead><tbody>
+    {% for report in reports %}<tr><td><strong class="post-title">{{ report.post_title }}</strong><span class="post-author">{{ report.author }}</span></td><td class="reason">{{ report.reason }}</td><td><span class="status {{ report.status }}">{{ report.status_label }}</span></td><td><a class="detail-link" href="{% url 'preview:report-detail' report.id %}">詳細を見る <span aria-hidden="true">↗</span><span class="sr-only">：{{ report.post_title }}</span></a></td></tr>{% empty %}<tr><td colspan="4" class="empty-state">該当するサンプルはありません。</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="table-footer">表示中 {{ reports|length }}件 <span>データの変更・保存は行いません。</span></div>
+  </section>
+{% endblock %}
