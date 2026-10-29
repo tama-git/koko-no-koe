@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""旅日記の開発用Djangoコマンド。"""
+"""ここの声の開発用Djangoコマンド。"""
 import os
 import sys
 
