@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 import { AuthErrors, AuthMode, validateAuth } from './src/auth/validation';
+import * as api from './src/auth/api';
 
 export default function App() {
   const [mode, setMode] = useState<AuthMode>('login');
@@ -22,6 +23,9 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<AuthErrors>({});
   const [message, setMessage] = useState('');
+  const [token, setToken] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
   const confirmPasswordRef = useRef<ComponentRef<typeof TextInput>>(null);
   const isRegister = mode === 'register';
@@ -35,7 +39,8 @@ export default function App() {
     setMessage('');
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
+    if (busyRef.current) return;
     const nextErrors = validateAuth({ email, password, confirmPassword }, mode);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -43,8 +48,70 @@ export default function App() {
       return;
     }
 
-    // APIのURL・送信形式・認証方式はチームで確認中。架空の成功は返さない。
-    setMessage('サーバーとの接続は準備中です。登録・ログインはまだ行えません。');
+    busyRef.current = true;
+    setBusy(true);
+    setMessage('');
+    try {
+      if (isRegister) {
+        await api.register(email, password);
+        setMode('login');
+        setMessage('登録が完了しました。ログインしてください。');
+      } else {
+        const newToken = await api.login(email, password);
+        setToken(newToken);
+      }
+      setPassword('');
+      setConfirmPassword('');
+      setShowPassword(false);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '処理できませんでした。もう一度お試しください。';
+      setMessage(isRegister && error instanceof api.ApiError && !error.status
+        ? `${detail} 登録が完了している場合もあるため、ログインもお試しください。` : detail);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function handleLogout() {
+    if (!token || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setMessage('');
+    try {
+      await api.logout(token);
+      setToken(null);
+      setMessage('ログアウトしました。');
+    } catch (error) {
+      if (error instanceof api.ApiError && error.status === 401) {
+        setToken(null);
+        setMessage('ログインの有効期限が切れました。');
+      } else {
+        setMessage(error instanceof Error ? error.message : 'ログアウトできませんでした。');
+      }
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  if (token) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" />
+        <View style={styles.container}>
+          <View style={styles.content}>
+            <Text style={styles.brandName}>ここの声</Text>
+            <Text style={styles.title}>トップページ</Text>
+            <Text style={styles.switchText}>ログインしました。ここは仮のトップページです。</Text>
+            <Pressable accessibilityRole="button" disabled={busy} onPress={handleLogout} style={[styles.button, busy && styles.buttonPressed]}>
+              <Text style={styles.buttonText}>{busy ? 'ログアウト中…' : 'ログアウト'}</Text>
+            </Pressable>
+            {message ? <Text style={styles.message} accessibilityLiveRegion="polite">{message}</Text> : null}
+          </View>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -81,6 +148,7 @@ export default function App() {
                 placeholderTextColor="#9AA79D"
                 style={[styles.input, errors.email && styles.inputError]}
                 value={email}
+                editable={!busy}
               />
               {errors.email ? <Text style={styles.error} accessibilityLiveRegion="polite">{errors.email}</Text> : null}
 
@@ -103,6 +171,7 @@ export default function App() {
                 secureTextEntry={!showPassword}
                 style={[styles.input, errors.password && styles.inputError]}
                 value={password}
+                editable={!busy}
               />
               {isRegister ? (
                 <Text style={styles.hint}>8文字以上、英大文字・英小文字・数字・記号のうち3種類以上</Text>
@@ -130,6 +199,7 @@ export default function App() {
                     secureTextEntry={!showPassword}
                     style={[styles.input, errors.confirmPassword && styles.inputError]}
                     value={confirmPassword}
+                    editable={!busy}
                   />
                   {errors.confirmPassword ? <Text style={styles.error} accessibilityLiveRegion="polite">{errors.confirmPassword}</Text> : null}
                 </>
@@ -139,6 +209,7 @@ export default function App() {
                 accessibilityRole="checkbox"
                 accessibilityLabel="パスワードを表示"
                 accessibilityState={{ checked: showPassword }}
+                disabled={busy}
                 onPress={() => setShowPassword((current) => !current)}
                 style={styles.checkboxRow}
               >
@@ -150,10 +221,11 @@ export default function App() {
 
               <Pressable
                 accessibilityRole="button"
+                disabled={busy}
                 onPress={handleSubmit}
-                style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+                style={({ pressed }) => [styles.button, (pressed || busy) && styles.buttonPressed]}
               >
-                <Text style={styles.buttonText}>{isRegister ? '登録する' : 'ログイン'}</Text>
+                <Text style={styles.buttonText}>{busy ? (isRegister ? '登録中…' : 'ログイン中…') : (isRegister ? '登録する' : 'ログイン')}</Text>
               </Pressable>
               {message ? <Text style={styles.message} accessibilityLiveRegion="polite">{message}</Text> : null}
             </View>
@@ -162,6 +234,7 @@ export default function App() {
               <Text style={styles.switchText}>{isRegister ? 'すでにアカウントをお持ちですか？' : 'アカウントをお持ちでない方'}</Text>
               <Pressable
                 accessibilityRole="button"
+                disabled={busy}
                 onPress={() => changeMode(isRegister ? 'login' : 'register')}
                 style={styles.switchButton}
               >
