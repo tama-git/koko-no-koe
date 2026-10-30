@@ -1,0 +1,42 @@
+{% load static %}
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}管理者システム{% endblock %} | ここの声</title>
+  <!-- もしプレビュー用のCSSを使う場合はそのまま保持 -->
+  <link rel="icon" type="image/svg+xml" href="{% static 'admin_side/favicon.svg' %}">
+  <link rel="stylesheet" href="{% static 'admin_side/styles.css' %}">
+  <!-- 必要に応じて追加のCSS -->
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="{% url 'admin_side:dashboard' %}">
+      <span class="brand-mark" aria-hidden="true">声</span>
+      <span>ここの声<small>管理コンソール</small></span>
+    </a>
+    <p class="nav-label">ワークスペース</p>
+    <nav aria-label="メインナビゲーション">
+      <a class="nav-item {% block overview_class %}{% endblock %}" href="{% url 'admin_side:dashboard' %}">
+        <span aria-hidden="true">▦</span> インデックス
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="connection-dot"></span> ローカル環境<small>管理者モード</small>
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <header class="topbar">
+      <span>ここの声 / 管理者</span>
+      <span class="preview-pill">SYSTEM <span>管理画面</span></span>
+    </header>
+    <main id="main-content">
+      {% block content %}{% endblock %}
+      <footer class="page-footer">ここの声 · 管理者画面</footer>
+    </main>
+  </div>
+</body>
+</html>
