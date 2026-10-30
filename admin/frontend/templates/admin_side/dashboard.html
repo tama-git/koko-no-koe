@@ -1,0 +1,98 @@
+{% extends 'admin_side/base.html' %}
+
+{% block title %}管理コンソール 概要{% endblock %}
+
+{% block overview_class %}active{% endblock %}
+
+{% block content %}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">OVERVIEW</p>
+      <h1>管理コンソール 概要</h1>
+      <p class="subtitle">「ここの声」に寄せられた意見や投稿を見守る、管理画面のダッシュボードです。</p>
+    </div>
+    <span class="environment-label">管理者モード</span>
+  </div>
+
+  <section class="notice" aria-label="お知らせ">
+    <span class="notice-icon" aria-hidden="true">i</span>
+    <div>
+      <strong>認証システムとデータベースの接続に成功しました。</strong>
+      <p>管理者アカウントでのログイン、一覧表示、各種ステータス別の絞り込みを確認できます。</p>
+    </div>
+  </section>
+
+  <section class="stat-grid" aria-label="投稿・通報の件数">
+    <article class="stat-card">
+      <span class="stat-label">すべての投稿</span>
+      <strong>{{ total_count|default:0 }}<small>件</small></strong>
+      <p>システム内の総件数</p>
+    </article>
+    <article class="stat-card">
+      <span class="stat-label"><span class="small-dot amber"></span> 未確認</span>
+      <strong>{{ pending_count|default:0 }}<small>件</small></strong>
+      <p>確認前の状態の項目</p>
+    </article>
+    <article class="stat-card">
+      <span class="stat-label"><span class="small-dot green"></span> 確認済み</span>
+      <strong>{{ reviewed_count|default:0 }}<small>件</small></strong>
+      <p>確認済みの項目</p>
+    </article>
+  </section>
+
+  <section class="panel" id="reports">
+    <div class="panel-heading">
+      <div>
+        <h2>声・投稿一覧</h2>
+        <p>「詳細を見る」から各項目の詳細へ進めます。</p>
+      </div>
+      <span class="sample-label">データ一覧</span>
+    </div>
+
+    <nav class="filter-tabs" aria-label="状態で絞り込み">
+      <a href="?status=all#reports" {% if active_filter == 'all' or not active_filter %}class="selected" aria-current="page"{% endif %}>すべて <span>{{ total_count|default:0 }}</span></a>
+      <a href="?status=pending#reports" {% if active_filter == 'pending' %}class="selected" aria-current="page"{% endif %}>未確認 <span>{{ pending_count|default:0 }}</span></a>
+      <a href="?status=reviewed#reports" {% if active_filter == 'reviewed' %}class="selected" aria-current="page"{% endif %}>確認済み <span>{{ reviewed_count|default:0 }}</span></a>
+    </nav>
+
+    <div class="table-scroll">
+      <table>
+        <caption class="sr-only">ここの声に対する投稿・通報一覧</caption>
+        <thead>
+          <tr>
+            <th scope="col">対象の投稿</th>
+            <th scope="col">内容・理由</th>
+            <th scope="col">状態</th>
+            <th scope="col"><span class="sr-only">操作</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for report in reports %}
+          <tr>
+            <td>
+              <strong class="post-title">{{ report.post_title }}</strong>
+              <span class="post-author">{{ report.author }}</span>
+            </td>
+            <td class="reason">{{ report.reason }}</td>
+            <td>
+              <span class="status {{ report.status }}">{{ report.status_label }}</span>
+            </td>
+            <td>
+              <!-- 必要に応じて詳細画面のURLに書き換えてください -->
+              <a class="detail-link" href="#">詳細を見る <span aria-hidden="true">↗</span><span class="sr-only">：{{ report.post_title }}</span></a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" class="empty-state">該当するデータはありません。</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-footer">
+      表示中 {{ reports|length|default:0 }}件 <span>ここの声 管理コンソール</span>
+    </div>
+  </section>
+{% endblock %}
