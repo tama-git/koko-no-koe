@@ -11,4 +11,5 @@ urlpatterns = [
 
     # 会員用のカスタムルーティング
     path('mobile/', include('accounts.mobile.urls')),
+    path('api/mobile/', include('accounts.mobile.api_urls')),
 ]

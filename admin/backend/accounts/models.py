@@ -61,3 +61,10 @@ class MobileUser(AbstractUser):
 
     class Meta:
         db_table = 'USER'
+
+
+class MobileSession(models.Model):
+    """モバイル専用の試作用セッション。トークンの原文は保存しない。"""
+    user = models.ForeignKey(MobileUser, on_delete=models.CASCADE)
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()

@@ -8,6 +8,8 @@ ADMIN_FRONTEND = BASE_DIR.parent / "frontend"
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "local-preview-only-not-for-deployment")
 DEBUG = True
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "[::1]"]
+# ローカル開発でiPhoneから接続する場合だけ、PCのIPアドレスを追加する。
+ALLOWED_HOSTS += [host.strip() for host in os.environ.get("DJANGO_EXTRA_ALLOWED_HOSTS", "").split(",") if host.strip()]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
