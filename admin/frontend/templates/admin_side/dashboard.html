@@ -4,6 +4,13 @@
 
 {% block overview_class %}active{% endblock %}
 
+{% block account_actions %}
+  <form method="post" action="{% url 'admin_side:logout' %}">
+    {% csrf_token %}
+    <button type="submit">ログアウト</button>
+  </form>
+{% endblock %}
+
 {% block content %}
   <div class="page-heading">
     <div>
@@ -17,8 +24,8 @@
   <section class="notice" aria-label="お知らせ">
     <span class="notice-icon" aria-hidden="true">i</span>
     <div>
-      <strong>認証システムとデータベースの接続に成功しました。</strong>
-      <p>管理者アカウントでのログイン、一覧表示、各種ステータス別の絞り込みを確認できます。</p>
+      <strong>管理者用の仮ページです。</strong>
+      <p>管理者ログインとログアウトを確認できます。投稿・通報の取得、絞り込み、詳細表示は未実装です。以下の件数は実データを取得した結果ではありません。</p>
     </div>
   </section>
 
@@ -44,7 +51,7 @@
     <div class="panel-heading">
       <div>
         <h2>声・投稿一覧</h2>
-        <p>「詳細を見る」から各項目の詳細へ進めます。</p>
+        <p>投稿・通報の表示領域です。実データとの接続は今後実装します。</p>
       </div>
       <span class="sample-label">データ一覧</span>
     </div>

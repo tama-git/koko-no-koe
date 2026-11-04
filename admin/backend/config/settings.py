@@ -51,3 +51,10 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATICFILES_DIRS = [ADMIN_FRONTEND / "static"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# 標準管理画面の auth.User と、独自管理画面の AdminUser は別の認証対象。
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "accounts.backends.AdminEmailBackend",
+]
+LOGIN_URL = "admin_side:login"

@@ -1,6 +1,6 @@
 from django import forms
 from django.contrib.auth import authenticate
-from ..models import AdminUser
+from ..backends import is_admin_account
 
 class AdminLoginForm(forms.Form):
     """
@@ -12,8 +12,14 @@ class AdminLoginForm(forms.Form):
     )
     password = forms.CharField(
         label="パスワード",
+        strip=False,
         widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': 'パスワードを入力'})
     )
+
+    def __init__(self, *args, request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.request = request
+        self.user_cache = None
 
     def clean(self):
         cleaned_data = super().clean()
@@ -21,13 +27,8 @@ class AdminLoginForm(forms.Form):
         password = cleaned_data.get('password')
 
         if email and password:
-            try:
-                user_obj = AdminUser.objects.get(email=email)
-                user = authenticate(username=user_obj.username, password=password)
-            except AdminUser.DoesNotExist:
-                user = None
-
-            if user is None:
+            user = authenticate(self.request, admin_email=email, password=password)
+            if not is_admin_account(user):
                 raise forms.ValidationError("メールアドレスまたはパスワードが正しくありません。")
             
             self.user_cache = user
