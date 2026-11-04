@@ -7,10 +7,13 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     path('', lambda request: redirect('admin_side:login'), name='root_redirect'),
-    # ここを追加：管理者用のカスタムルーティング
+    # 管理者用のカスタムルーティング
     path('', include('accounts.admin_side.urls')),
 
     # 会員用のカスタムルーティング
     path('mobile/', include('accounts.mobile.urls')),
     path('api/mobile/', include('accounts.mobile.api_urls')),
+
+    # 投稿用のAPIルーティング
+    path('api/posts/', include('posts.urls')),
 ]
