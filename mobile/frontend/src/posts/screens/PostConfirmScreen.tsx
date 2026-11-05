@@ -48,7 +48,6 @@ export function PostConfirmScreen({ route, navigation }: { route: any; navigatio
         
         {/* 画面タイトル */}
         <Text style={styles.title}>投稿内容の確認</Text>
-
         {/* 確認用のカード型レイアウト */}
         <View style={styles.card}>
           <Text style={styles.label}>【メッセージ】</Text>
