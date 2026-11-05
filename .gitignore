@@ -272,3 +272,4 @@ yarn-error.*
 /admin/backend/db.sqlite3
 /admin/backend/staticfiles/
 /admin/backend/.env
+/admin/backend/media/
