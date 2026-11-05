@@ -74,10 +74,18 @@ function parsePost(value: unknown): SavedPost {
   return { ...p, image: p.image ? `${getApiUrl()}${p.id}/image/` : null } as SavedPost;
 }
 
-export async function loadPosts(token: string): Promise<SavedPost[]> {
-  const data = await request('', token);
+async function loadPostList(path: string, token: string): Promise<SavedPost[]> {
+  const data = await request(path, token);
   if (!Array.isArray(data)) throw new PostApiError('投稿一覧を確認できませんでした。');
   return data.map(parsePost);
+}
+
+export function loadPosts(token: string): Promise<SavedPost[]> {
+  return loadPostList('', token);
+}
+
+export function loadPublicPosts(token: string): Promise<SavedPost[]> {
+  return loadPostList('public/', token);
 }
 
 export type NewPost = {

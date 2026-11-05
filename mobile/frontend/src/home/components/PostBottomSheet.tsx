@@ -2,10 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  ActivityIndicator,
-  Pressable,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -13,27 +10,12 @@ import {
 
 import { clampSheetHeight, getClosestSheetLevel, getSheetHeights } from './bottomSheetGeometry';
 import type { SheetLevel } from './bottomSheetGeometry';
-import { loadPosts } from '../../posts/postService';
-import type { SavedPost } from '../../posts/postService';
+import { PostList } from '../../posts/components/PostList';
 
 export function PostBottomSheet({ bottomInset = 0, token, refreshKey, onSelectPost }: {
   bottomInset?: number; token: string; refreshKey: number; onSelectPost: (id: number) => void;
 }) {
   const [screenHeight, setScreenHeight] = useState(0);
-  const [posts, setPosts] = useState<SavedPost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [retry, setRetry] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError('');
-    void loadPosts(token).then(data => { if (active) setPosts(data); })
-      .catch(reason => { if (active) setError(reason instanceof Error ? reason.message : '投稿を取得できませんでした。'); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [token, refreshKey, retry]);
 
   const animatedHeight = useRef(new Animated.Value(0)).current;
   const touchStartY = useRef(0);
@@ -117,22 +99,8 @@ export function PostBottomSheet({ bottomInset = 0, token, refreshKey, onSelectPo
             <View style={styles.handle} />
           </View>
 
-          <Text style={styles.title}>自分の投稿</Text>
-
-          <ScrollView style={styles.list}>
-            {loading && <ActivityIndicator color="#2C6049" />}
-            {error ? <View>
-              <Text accessibilityLiveRegion="polite">{error}</Text>
-              <Pressable accessibilityRole="button" onPress={() => setRetry(value => value + 1)}><Text>再取得</Text></Pressable>
-            </View> : null}
-            {!loading && !error && posts.length === 0 && <Text>まだ投稿がありません。下のバーから投稿できます。</Text>}
-            {posts.map(post => (
-              <Pressable key={post.id} accessibilityRole="button" onPress={() => onSelectPost(post.id)} style={styles.post}>
-                <Text style={styles.postText}>{post.message || '写真の投稿'}</Text>
-                <Text>{post.is_published ? '公開' : '非公開'} ・ {new Date(post.created_at).toLocaleString('ja-JP')}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+          <Text style={styles.title}>公開投稿</Text>
+          <PostList scope="public" token={token} refreshKey={refreshKey} onSelectPost={onSelectPost} />
         </SafeAreaView>
       </Animated.View>
     </View>
@@ -174,19 +142,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 12,
     color: '#1D4030',
-  },
-  list: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  post: {
-    padding: 18,
-    backgroundColor: '#F4F6F4',
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  postText: {
-    fontSize: 14,
-    color: '#333333',
   },
 });

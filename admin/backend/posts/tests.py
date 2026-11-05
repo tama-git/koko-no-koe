@@ -58,12 +58,53 @@ class PostApiTests(TestCase):
         self.assertEqual(detail.json()['message'], '保存する投稿')
 
     def test_non_public_post_and_other_accounts_are_not_exposed(self):
-        post_id = self.create(is_published=False).data['id']
+        post_id = self.create(is_published=False, image=self.image()).data['id']
         self.assertFalse(Post.objects.get(pk=post_id).is_public)
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
         self.assertEqual(self.client.get('/api/posts/').json(), [])
+        self.assertEqual(self.client.get('/api/posts/public/').json(), [])
         self.assertEqual(self.client.get(f'/api/posts/{post_id}/').status_code, 404)
         self.assertEqual(self.client.get(f'/api/posts/{post_id}/image/').status_code, 404)
+
+    def test_public_list_and_detail_allow_other_members_without_location(self):
+        first = self.create().data['id']
+        latest = self.create(latitude='-33.8650000', longitude='151.2094000').data['id']
+        unset_id = self.create().data['id']
+        Post.objects.filter(pk=unset_id).update(is_public=None)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+
+        self.assertEqual(self.client.get('/api/posts/').json(), [])
+        public = self.client.get('/api/posts/public/')
+        self.assertEqual(public.status_code, 200)
+        self.assertEqual([post['id'] for post in public.json()], [latest, first])
+        detail = self.client.get(f'/api/posts/{latest}/')
+        self.assertEqual(detail.status_code, 200)
+        self.assertNotIn('user_id', detail.json())
+        self.assertEqual(self.client.get(f'/api/posts/{unset_id}/').status_code, 404)
+        self.assertEqual(self.client.post('/api/posts/public/', self.payload(), format='json').status_code, 405)
+
+    def test_public_photo_for_another_member_does_not_include_camera_metadata(self):
+        data = io.BytesIO()
+        exif = Image.Exif()
+        exif[271] = 'Test camera'
+        exif[274] = 6
+        Image.new('RGB', (10, 20), 'white').save(data, 'JPEG', exif=exif)
+        photo = SimpleUploadedFile('camera.jpg', data.getvalue(), content_type='image/jpeg')
+        post_id = self.create(image=photo).data['id']
+        photo_url = f'/api/posts/{post_id}/image/'
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        response = self.client.get(photo_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'image/jpeg')
+        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        with Image.open(io.BytesIO(b''.join(response.streaming_content))) as decoded:
+            self.assertEqual(decoded.size, (20, 10))
+            self.assertFalse(decoded.getexif())
+        response.close()
+
+        self.client.credentials()
+        for url in ('/api/posts/public/', f'/api/posts/{post_id}/', photo_url):
+            self.assertEqual(self.client.get(url).status_code, 401)
 
     def test_photo_only_post_upload_and_protected_download(self):
         response = self.create(message='', image=self.image())

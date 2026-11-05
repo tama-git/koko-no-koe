@@ -28,6 +28,6 @@ class PostSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         if instance.image:
-            # 保存先を直接公開せず、本人の認証が必要な画像取得URLを返す。
+            # 保存先を直接公開せず、認証と閲覧条件を確認する画像取得URLを返す。
             data['image'] = self.context['request'].build_absolute_uri(reverse('post-image', args=[instance.pk]))
         return data

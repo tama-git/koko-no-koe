@@ -39,6 +39,19 @@ test('existing list and create endpoints and form fields are preserved', async (
   });
 });
 
+test('public list uses the authenticated API without sending device coordinates', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  const post = { id: 7, message: 'public', image: null, latitude: 35, longitude: 139, is_published: true, created_at: '2026-11-05T00:00:00Z' };
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'http://localhost:9999/api/posts/public/');
+    assert.equal(options.method, 'GET');
+    assert.deepEqual(options.headers, { Authorization: 'Bearer test-token' });
+    assert.equal(options.body, undefined);
+    return Response.json([post]);
+  });
+  assert.deepEqual(await service.loadPublicPosts('test-token'), [post]);
+});
+
 test('native photo is attached as a file descriptor and detail uses the configured API', async (t) => {
   const parts = [];
   const post = { id: 2, message: '', image: 'https://untrusted.invalid/photo', latitude: 35, longitude: 139, is_published: false, created_at: '2026-11-05T00:00:00Z' };
