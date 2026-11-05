@@ -2,6 +2,7 @@ import hashlib
 import io
 import tempfile
 from datetime import timedelta
+from unittest.mock import patch
 
 from PIL import Image
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -166,5 +167,54 @@ class PostApiTests(TestCase):
     def test_no_image_and_unsupported_modifications(self):
         post_id = self.create().data['id']
         self.assertEqual(self.client.get(f'/api/posts/{post_id}/image/').status_code, 404)
-        self.assertEqual(self.client.delete(f'/api/posts/{post_id}/').status_code, 405)
         self.assertEqual(self.client.patch(f'/api/posts/{post_id}/', {'message': 'changed'}).status_code, 405)
+
+    def test_owner_deletes_post_and_photo_from_all_views(self):
+        post_id = self.create(image=self.image()).data['id']
+        image = Post.objects.get(pk=post_id).image
+        self.assertTrue(image.storage.exists(image.name))
+        url = f'/api/posts/{post_id}/'
+
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.content, b'')
+        self.assertFalse(Post.objects.filter(pk=post_id).exists())
+        self.assertFalse(image.storage.exists(image.name))
+        self.assertEqual(self.client.get('/api/posts/').json(), [])
+        self.assertEqual(self.client.get('/api/posts/public/').json(), [])
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.get(f'{url}image/').status_code, 404)
+        self.assertEqual(self.client.delete(url).status_code, 404)
+
+    def test_public_read_access_does_not_grant_delete_access(self):
+        post_id = self.create(image=self.image()).data['id']
+        image = Post.objects.get(pk=post_id).image
+        url = f'/api/posts/{post_id}/'
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertEqual(self.client.delete(url).status_code, 404)
+        self.client.credentials()
+        self.assertEqual(self.client.delete(url).status_code, 401)
+        self.assertTrue(Post.objects.filter(pk=post_id).exists())
+        self.assertTrue(image.storage.exists(image.name))
+
+    def test_photo_delete_failure_preserves_the_post_for_retry(self):
+        post_id = self.create(is_published=False, image=self.image()).data['id']
+        image = Post.objects.get(pk=post_id).image
+        url = f'/api/posts/{post_id}/'
+        with patch.object(image.storage, 'delete', side_effect=PermissionError('locked')):
+            self.assertEqual(self.client.delete(url).status_code, 503)
+        self.assertTrue(Post.objects.filter(pk=post_id).exists())
+        self.assertTrue(image.storage.exists(image.name))
+        self.assertEqual(self.client.delete(url).status_code, 204)
+        self.assertFalse(image.storage.exists(image.name))
+
+    def test_legacy_posts_can_be_deleted_without_removing_a_shared_photo(self):
+        shared = self.create(image=self.image()).data['id']
+        image = Post.objects.get(pk=shared).image
+        legacy = Post.objects.create(user_id=self.owner, message='以前の投稿', image=image.name)
+        text_only = Post.objects.create(user_id=self.owner, message='本文のみ')
+        self.assertEqual(self.client.delete(f'/api/posts/{legacy.pk}/').status_code, 204)
+        self.assertEqual(self.client.delete(f'/api/posts/{text_only.pk}/').status_code, 204)
+        self.assertEqual(list(Post.objects.values_list('pk', flat=True)), [shared])
+        self.assertTrue(image.storage.exists(image.name))

@@ -1,10 +1,11 @@
 from io import BytesIO
 
 from PIL import Image, ImageOps
+from django.db import transaction
 from django.db.models import Q
 from django.http import FileResponse
 from rest_framework import generics
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import APIException, NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import JSONRenderer
 
@@ -54,8 +55,31 @@ class ReadablePostAccess(PostAccess):
         return super().get_queryset().filter(Q(user_id=self.request.user) | self.public_filter())
 
 
-class PostDetailAPIView(ReadablePostAccess, generics.RetrieveAPIView):
-    pass
+class PostPhotoDeletionError(APIException):
+    status_code = 503
+    default_detail = '写真を削除できませんでした。時間をおいてもう一度お試しください。'
+
+
+class PostDetailAPIView(ReadablePostAccess, generics.RetrieveDestroyAPIView):
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.request.method == 'DELETE':
+            return queryset.filter(user_id=self.request.user)
+        return queryset
+
+    def perform_destroy(self, instance):
+        image = instance.image
+        with transaction.atomic():
+            deleted, _ = instance.delete()
+            if not deleted:
+                raise NotFound('投稿が見つかりませんでした。')
+            # 古いデータで同じ画像を参照する投稿があれば、その画像は残す。
+            if image and not Post.objects.filter(image=image.name).exists():
+                try:
+                    image.delete(save=False)
+                except OSError as error:
+                    # ファイルを消せなければ投稿レコードを戻し、再試行できるようにする。
+                    raise PostPhotoDeletionError() from error
 
 
 class PostImageAPIView(ReadablePostAccess, generics.GenericAPIView):

@@ -52,6 +52,36 @@ test('public list uses the authenticated API without sending device coordinates'
   assert.deepEqual(await service.loadPublicPosts('test-token'), [post]);
 });
 
+test('delete accepts an empty 204 and distinguishes permission and uncertain results', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  let response = new Response(null, { status: 204 });
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'http://localhost:9999/api/posts/7/');
+    assert.equal(options.method, 'DELETE');
+    assert.equal(options.headers.Authorization, 'Bearer test-token');
+    assert.equal(options.body, undefined);
+    if (response instanceof Error) throw response;
+    return response;
+  });
+  await service.deletePost(7, 'test-token');
+  response = Response.json({ detail: 'Not found' }, { status: 404 });
+  await assert.rejects(service.deletePost(7, 'test-token'), error => error.status === 404);
+  response = Response.json({ detail: '写真を削除できませんでした' }, { status: 503 });
+  await assert.rejects(service.deletePost(7, 'test-token'), /写真を削除できませんでした/);
+  response = Response.json({ ok: true });
+  await assert.rejects(service.deletePost(7, 'test-token'), /削除結果を確認できませんでした/);
+  response = new TypeError('Network error');
+  await assert.rejects(service.deletePost(7, 'test-token'), /削除結果を確認できませんでした/);
+});
+
+test('older posts with empty coordinates and publication status can be opened', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  const post = { id: 7, message: 'legacy', image: null, latitude: null, longitude: null, is_published: null, created_at: '2026-11-05T00:00:00Z' };
+  t.mock.method(globalThis, 'fetch', async (url) => Response.json(url.endsWith('/7/') ? post : [post]));
+  assert.deepEqual(await service.loadPosts('test-token'), [post]);
+  assert.deepEqual(await service.getPostById(7, 'test-token'), post);
+});
+
 test('native photo is attached as a file descriptor and detail uses the configured API', async (t) => {
   const parts = [];
   const post = { id: 2, message: '', image: 'https://untrusted.invalid/photo', latitude: 35, longitude: 139, is_published: false, created_at: '2026-11-05T00:00:00Z' };

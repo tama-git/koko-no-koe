@@ -23,6 +23,7 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedPost, setSelectedPost] = useState<number | null>(null);
   const [ownPostsOpen, setOwnPostsOpen] = useState(false);
+  const refreshPosts = () => setRefreshKey(value => value + 1);
   return (
     <AppScreen edgeToEdge>
       <View style={{ flex: 1 }}>
@@ -38,9 +39,10 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
         <PostBottomSheet bottomInset={inputBarHeight} token={token} refreshKey={refreshKey} onSelectPost={setSelectedPost} />
         <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
           onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
-        {composerOpen && <PostComposerModal token={token} onCreated={() => setRefreshKey(value => value + 1)} onClose={() => setComposerOpen(false)} />}
+        {composerOpen && <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setComposerOpen(false)} />}
         {selectedPost !== null && <PostDetailModal postId={selectedPost} token={token} onClose={() => setSelectedPost(null)} />}
-        {ownPostsOpen && <OwnPostsModal token={token} refreshKey={refreshKey} onClose={() => setOwnPostsOpen(false)} />}
+        {ownPostsOpen && <OwnPostsModal token={token} refreshKey={refreshKey}
+          onClose={() => setOwnPostsOpen(false)} onPostDeleted={refreshPosts} />}
 
       </View>
     </AppScreen>
