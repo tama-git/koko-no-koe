@@ -1,12 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
-import { getPostById } from '../postService'; // バックエンドから個別データを取得するAPI
+import React, { useState, useEffect, useRef } from 'react';
+import { Alert, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
+import { deletePost, getPostById, PostApiError } from '../postService';
 import type { SavedPost } from '../postService';
 
 /**
  * 投稿データの型定義
  */
-export function PostDetailScreen({ route, navigation, token }: { route: any; navigation: any; token: string }) {
+export function PostDetailScreen({ route, navigation, token, onDeleted }: {
+  route: { params: { postId: number } };
+  navigation: { goBack: () => void };
+  token: string;
+  onDeleted?: () => void;
+}) {
   // 一覧画面から渡された投稿IDを受け取る
   const { postId } = route.params;
 
@@ -14,6 +19,8 @@ export function PostDetailScreen({ route, navigation, token }: { route: any; nav
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [deleting, setDeleting] = useState(false);
+  const deletionPending = useRef(false);
 
   /**
    * サーバーから特定の投稿詳細データを取得する処理
@@ -30,6 +37,34 @@ export function PostDetailScreen({ route, navigation, token }: { route: any; nav
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [postId, token, revision]);
+
+  const removePost = async () => {
+    if (!onDeleted || deletionPending.current) return;
+    deletionPending.current = true;
+    setDeleting(true);
+    try {
+      await deletePost(postId, token);
+    } catch (reason) {
+      if (reason instanceof PostApiError && reason.status === 404) {
+        Alert.alert('投稿が見つかりませんでした', '自分の投稿一覧を更新します。');
+        onDeleted();
+      } else {
+        Alert.alert('削除を完了できませんでした', reason instanceof Error ? reason.message : '時間をおいてもう一度お試しください。');
+      }
+      return;
+    } finally {
+      deletionPending.current = false;
+      setDeleting(false);
+    }
+    onDeleted();
+  };
+
+  const confirmDeletion = () => {
+    Alert.alert('投稿を削除しますか？', '本文と写真が削除されます。削除後は元に戻せません。', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除する', style: 'destructive', onPress: () => { void removePost(); } },
+    ]);
+  };
 
   // 読み込み中のインジケーター表示
   if (loading) {
@@ -81,8 +116,10 @@ export function PostDetailScreen({ route, navigation, token }: { route: any; nav
             {/* 位置情報セクション */}
             <View style={styles.locationContainer}>
               <Text style={styles.locationTitle}>📍 撮影場所の位置情報</Text>
-              <Text style={styles.locationText}>緯度: {post.latitude.toFixed(4)}</Text>
-              <Text style={styles.locationText}>経度: {post.longitude.toFixed(4)}</Text>
+              {post.latitude !== null && post.longitude !== null ? <>
+                <Text style={styles.locationText}>緯度: {post.latitude.toFixed(4)}</Text>
+                <Text style={styles.locationText}>経度: {post.longitude.toFixed(4)}</Text>
+              </> : <Text style={styles.locationText}>位置情報なし</Text>}
             </View>
 
           </View>
@@ -91,10 +128,17 @@ export function PostDetailScreen({ route, navigation, token }: { route: any; nav
           <TouchableOpacity 
             style={styles.backButton} 
             onPress={() => navigation.goBack()}
+            disabled={deleting}
             activeOpacity={0.8}
           >
             <Text style={styles.backButtonText}>戻る</Text>
           </TouchableOpacity>
+          {onDeleted && (
+            <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: deleting, busy: deleting }}
+              style={styles.deleteButton} disabled={deleting} onPress={confirmDeletion}>
+              <Text style={styles.deleteButtonText}>{deleting ? '削除中…' : '投稿を削除'}</Text>
+            </TouchableOpacity>
+          )}
 
         </View>
       </ScrollView>
@@ -197,4 +241,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  deleteButton: {
+    minHeight: 48,
+    marginTop: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#B3261E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButtonText: { color: '#B3261E', fontSize: 15, fontWeight: '700' },
 });
