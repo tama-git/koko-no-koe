@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { StyleSheet, Text, View, TextInput, Switch, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import * as Location from 'expo-location'; // 位置情報（GPS）を取得するためのモジュール
 import * as ImagePicker from 'expo-image-picker'; // その場でカメラを起動して撮影するためのモジュール
@@ -12,6 +12,9 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
   const [imageUri, setImageUri] = useState<string | null>(null); // 撮影された写真の保存先URI
   const [isPublished, setIsPublished] = useState(true);          // 公開ステータス（ON/OFF）
   const [loading, setLoading] = useState(false);               // 処理中（連打防止用）の状態管理
+  const busy = useRef(false);
+  const [imageMimeType, setImageMimeType] = useState<string | undefined>();
+  const [imageFileName, setImageFileName] = useState<string | undefined>();
 
   /**
    * その場でカメラを起動して写真を撮影する処理
@@ -34,6 +37,8 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
     // ユーザーがキャンセルせず撮影完了した場合、画像のURIを状態に保存
     if (!result.canceled && result.assets && result.assets.length > 0) {
       setImageUri(result.assets[0].uri);
+      setImageMimeType(result.assets[0].mimeType || undefined);
+      setImageFileName(result.assets[0].fileName || undefined);
     }
   };
 
@@ -41,6 +46,12 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
    * 「確認画面へ進む」ボタンが押されたときの処理
    */
   const handleGoToConfirm = async () => {
+    if (busy.current) return;
+    if (!message.trim() && !imageUri) {
+      Alert.alert('入力を確認してください', 'メッセージまたは写真を入力してください。');
+      return;
+    }
+    busy.current = true;
     try {
       setLoading(true); // 処理中フラグをON
 
@@ -67,12 +78,15 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
         latitude,
         longitude,
         isPublished,
+        imageMimeType,
+        imageFileName,
       });
 
     } catch (error: any) {
       // エラーハンドリング
       Alert.alert('エラー', error.message || '位置情報の取得に失敗しました');
     } finally {
+      busy.current = false;
       // 処理終了後にローディングを解除
       setLoading(false);
     }

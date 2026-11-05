@@ -6,17 +6,21 @@ import { HomeMap } from '../../map/components/HomeMap';
 import { PostBottomSheet } from '../components/PostBottomSheet';
 import { MessageInputBar } from '../components/MessageInputBar';
 import { PostComposerModal } from '../../posts/components/PostComposerModal';
+import { PostDetailModal } from '../../posts/components/PostDetailModal';
 
 type Props = {
+  token: string;
   busy: boolean;
   message: string;
   onLogout: () => Promise<void>;
 };
 
 /** トップ画面担当の編集場所。ログアウトの処理は認証担当に渡す。 */
-export function HomeScreen({ busy, message, onLogout }: Props) {
+export function HomeScreen({ token, busy, message, onLogout }: Props) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [inputBarHeight, setInputBarHeight] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedPost, setSelectedPost] = useState<number | null>(null);
   return (
     <AppScreen edgeToEdge>
       <View style={{ flex: 1 }}>
@@ -24,10 +28,11 @@ export function HomeScreen({ busy, message, onLogout }: Props) {
         {/* 地図の上に、後から描画するボトムシートを重ねる */}
         <HomeMap />
         {/* 投稿一覧のボトムシート */}
-        <PostBottomSheet bottomInset={inputBarHeight} />
+        <PostBottomSheet bottomInset={inputBarHeight} token={token} refreshKey={refreshKey} onSelectPost={setSelectedPost} />
         <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
           onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
-        {composerOpen && <PostComposerModal onClose={() => setComposerOpen(false)} />}
+        {composerOpen && <PostComposerModal token={token} onCreated={() => setRefreshKey(value => value + 1)} onClose={() => setComposerOpen(false)} />}
+        {selectedPost !== null && <PostDetailModal postId={selectedPost} token={token} onClose={() => setSelectedPost(null)} />}
 
       </View>
     </AppScreen>

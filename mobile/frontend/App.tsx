@@ -8,7 +8,7 @@ export default function App() {
   const auth = useAuth();
 
   if (auth.token) {
-    return <HomeScreen busy={auth.busy} message={auth.message} onLogout={auth.handleLogout} />;
+    return <HomeScreen token={auth.token} busy={auth.busy} message={auth.message} onLogout={auth.handleLogout} />;
   }
 
   return auth.mode === 'register'

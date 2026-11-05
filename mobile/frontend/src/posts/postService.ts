@@ -1,99 +1,117 @@
-/** 投稿の取得・登録・削除を実装する場所。送受信の形式はサーバー担当と確認する。 */
-
-// 環境変数からベースURLを取得
 const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '') ?? '';
+
+export type SavedPost = {
+  id: number;
+  message: string;
+  image: string | null;
+  latitude: number;
+  longitude: number;
+  is_published: boolean;
+  created_at: string;
+};
+
+export class PostApiError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) { super(message); this.status = status; }
+}
+
 function getApiUrl(): string {
-  // フォームを読み込むだけでは例外を出さず、実際の通信時に設定を確認する。
-  if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) {
-    throw new Error('接続先が設定されていません。開発者に確認してください。');
-  }
+  if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) throw new PostApiError('接続先が設定されていません。開発者に確認してください。');
   return `${baseUrl}/api/posts/`;
 }
 
-/**
- * 投稿一覧を取得する関数 GET
- */
-export async function loadPosts(): Promise<any> {
-  try {
-    // APIサーバーへGETリクエスト
-    const response = await fetch(getApiUrl());
-
-    // レスポンスが正常でなければエラーを投げる
-    if (!response.ok) {
-      throw new Error(`データの取得に失敗しました: ${response.status}`);
+function errorMessage(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return errorMessage(value[0]);
+  if (value && typeof value === 'object') {
+    for (const item of Object.values(value)) {
+      const message = errorMessage(item);
+      if (message) return message;
     }
-
-    // レスポンスをJSON形式に変換
-    const posts = await response.json();
-    return posts;
-  } catch (error) {
-    console.error('投稿一覧の取得に失敗しました:', error);
-    throw error;
   }
+  return null;
 }
 
-/**
- * 新しい投稿を登録する関数 POST
- */
-export async function createPost(postData: {
+async function request(path: string, token: string, body?: FormData): Promise<unknown> {
+  const url = getApiUrl() + path;
+  if (!token) throw new PostApiError('ログインし直してください。', 401);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(url, {
+      method: body ? 'POST' : 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+      body,
+      signal: controller.signal,
+    });
+    let data: unknown;
+    try { data = await response.json(); }
+    catch { throw new PostApiError(body
+      ? '送信結果を確認できませんでした。再送する前に、自分の投稿一覧を確認してください。'
+      : 'サーバーの応答を確認できませんでした。', response.status); }
+    if (!response.ok) throw new PostApiError(errorMessage(data) || '投稿の処理に失敗しました。', response.status);
+    if (response.status !== (body ? 201 : 200)) throw new PostApiError('サーバーの応答を確認できませんでした。');
+    return data;
+  } catch (error) {
+    if (error instanceof PostApiError) throw error;
+    throw new PostApiError(body
+      ? '送信結果を確認できませんでした。再送する前に、自分の投稿一覧を確認してください。'
+      : '投稿を取得できませんでした。通信環境を確認してください。');
+  } finally { clearTimeout(timer); }
+}
+
+function parsePost(value: unknown): SavedPost {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new PostApiError('投稿データを確認できませんでした。');
+  const p = value as Record<string, unknown>;
+  if (!Number.isInteger(p.id) || (p.id as number) <= 0 || typeof p.message !== 'string' ||
+      !(p.image === null || typeof p.image === 'string') ||
+      typeof p.latitude !== 'number' || !Number.isFinite(p.latitude) || Math.abs(p.latitude) > 90 ||
+      typeof p.longitude !== 'number' || !Number.isFinite(p.longitude) || Math.abs(p.longitude) > 180 ||
+      typeof p.is_published !== 'boolean' || typeof p.created_at !== 'string') {
+    throw new PostApiError('投稿データを確認できませんでした。');
+  }
+  // 認証ヘッダーを送る画像の取得先は、設定した自分のAPIだけに限定する。
+  return { ...p, image: p.image ? `${getApiUrl()}${p.id}/image/` : null } as SavedPost;
+}
+
+export async function loadPosts(token: string): Promise<SavedPost[]> {
+  const data = await request('', token);
+  if (!Array.isArray(data)) throw new PostApiError('投稿一覧を確認できませんでした。');
+  return data.map(parsePost);
+}
+
+export type NewPost = {
   message?: string;
   latitude: number;
   longitude: number;
-  image?: any;
+  image?: string | null;
+  imageMimeType?: string;
+  imageFileName?: string;
   is_published: boolean;
-}): Promise<any> {
-  try {
-    // メッセージと画像が両方入っていない場合は送信ストップ
-    if (!postData.message && !postData.image) {
-      throw new Error('メッセージまたは画像のどちらかを入力してください。');
-    }
+};
 
-    // フォームデータの入れ物を作成
-    const formData = new FormData();
-
-    // 必須項目の追加（データベースが NOT NULL の前提）
-    formData.append('latitude', postData.latitude.toString());          // 緯度
-    formData.append('longitude', postData.longitude.toString());        // 経度
-    formData.append('is_published', postData.is_published.toString());  // 公開ステータス
-
-    // 任意項目の追加（値が存在する場合のみ）
-    if (postData.message) {
-      formData.append('message', postData.message);   // メッセージ
-    }
-    if (postData.image) {
-      formData.append('image', postData.image);   // 画像
-    }
-
-    // APIサーバーへPOSTリクエスト
-    const response = await fetch(getApiUrl(), {
-      method: 'POST',
-      body: formData,
-    });
-
-    // レスポンスが正常でなければエラーを投げる
-    if (!response.ok) {
-      throw new Error(`投稿の作成に失敗しました: ${response.status}`);
-    }
-
-    // レスポンスをJSON形式に変換して返す
-    const createdPost = await response.json();
-    return createdPost;
-
-  } catch (error) {
-    console.error('投稿の登録に失敗しました:', error);
-    throw error;
+export async function createPost(postData: NewPost, token: string): Promise<SavedPost> {
+  if (!postData.message?.trim() && !postData.image) throw new PostApiError('メッセージまたは写真を入力してください。');
+  const formData = new FormData();
+  // DBの小数点以下7桁にそろえ、端末の浮動小数点の桁数による入力エラーを防ぐ。
+  formData.append('latitude', postData.latitude.toFixed(7));
+  formData.append('longitude', postData.longitude.toFixed(7));
+  formData.append('is_published', String(postData.is_published));
+  formData.append('message', postData.message?.trim() || '');
+  if (postData.image) {
+    formData.append('image', {
+      uri: postData.image,
+      name: postData.imageFileName || (postData.imageMimeType === 'image/png' ? 'photo.png' : 'photo.jpg'),
+      type: postData.imageMimeType || 'image/jpeg',
+    } as unknown as Blob);
   }
+  // Content-Typeは指定しない。React Nativeがmultipartの境界を設定する。
+  const result = await request('', token, formData);
+  try { return parsePost(result); }
+  catch { throw new PostApiError('送信結果を確認できませんでした。再送する前に、自分の投稿一覧を確認してください。'); }
 }
 
-/**
- * 指定したIDの投稿詳細を取得する関数
- */
-export async function getPostById(postId: number) {
-  const response = await fetch(`https://your-backend-url/api/posts/${postId}/`);
-  
-  if (!response.ok) {
-    throw new Error('投稿詳細の取得に失敗しました');
-  }
-  
-  return await response.json();
+export async function getPostById(postId: number, token: string): Promise<SavedPost> {
+  if (!Number.isInteger(postId) || postId <= 0) throw new PostApiError('投稿IDを確認してください。');
+  return parsePost(await request(`${postId}/`, token));
 }

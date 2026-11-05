@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  ActivityIndicator,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -11,16 +13,27 @@ import {
 
 import { clampSheetHeight, getClosestSheetLevel, getSheetHeights } from './bottomSheetGeometry';
 import type { SheetLevel } from './bottomSheetGeometry';
+import { loadPosts } from '../../posts/postService';
+import type { SavedPost } from '../../posts/postService';
 
-const samplePosts = [
-  '山頂から見た夕焼けが最高だった',
-  '静かで落ち着くお気に入りの場所',
-  'ここからの景色を見てほしい',
-  'また訪れたい思い出の場所',
-];
-
-export function PostBottomSheet({ bottomInset = 0 }: { bottomInset?: number }) {
+export function PostBottomSheet({ bottomInset = 0, token, refreshKey, onSelectPost }: {
+  bottomInset?: number; token: string; refreshKey: number; onSelectPost: (id: number) => void;
+}) {
   const [screenHeight, setScreenHeight] = useState(0);
+  const [posts, setPosts] = useState<SavedPost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    void loadPosts(token).then(data => { if (active) setPosts(data); })
+      .catch(reason => { if (active) setError(reason instanceof Error ? reason.message : '投稿を取得できませんでした。'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [token, refreshKey, retry]);
 
   const animatedHeight = useRef(new Animated.Value(0)).current;
   const touchStartY = useRef(0);
@@ -104,13 +117,20 @@ export function PostBottomSheet({ bottomInset = 0 }: { bottomInset?: number }) {
             <View style={styles.handle} />
           </View>
 
-          <Text style={styles.title}>このエリアの投稿</Text>
+          <Text style={styles.title}>自分の投稿</Text>
 
           <ScrollView style={styles.list}>
-            {samplePosts.map((post, index) => (
-              <View key={index} style={styles.post}>
-                <Text style={styles.postText}>{post}</Text>
-              </View>
+            {loading && <ActivityIndicator color="#2C6049" />}
+            {error ? <View>
+              <Text accessibilityLiveRegion="polite">{error}</Text>
+              <Pressable accessibilityRole="button" onPress={() => setRetry(value => value + 1)}><Text>再取得</Text></Pressable>
+            </View> : null}
+            {!loading && !error && posts.length === 0 && <Text>まだ投稿がありません。下のバーから投稿できます。</Text>}
+            {posts.map(post => (
+              <Pressable key={post.id} accessibilityRole="button" onPress={() => onSelectPost(post.id)} style={styles.post}>
+                <Text style={styles.postText}>{post.message || '写真の投稿'}</Text>
+                <Text>{post.is_published ? '公開' : '非公開'} ・ {new Date(post.created_at).toLocaleString('ja-JP')}</Text>
+              </Pressable>
             ))}
           </ScrollView>
         </SafeAreaView>
