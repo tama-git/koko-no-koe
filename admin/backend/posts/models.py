@@ -1,4 +1,10 @@
 from django.db import models
+from pathlib import Path
+import uuid
+
+
+def post_image_path(instance, filename):
+    return 'posts/' + uuid.uuid4().hex + Path(filename).suffix.lower()
 
 class Post(models.Model):
     """
@@ -11,11 +17,12 @@ class Post(models.Model):
     message = models.TextField(
         verbose_name='メッセージ',
         null=False,
-        blank=False
+        blank=True
     )
 
     # 写真
     image = models.ImageField(
+        upload_to=post_image_path,
         verbose_name='写真',
         null=True,
         blank=True

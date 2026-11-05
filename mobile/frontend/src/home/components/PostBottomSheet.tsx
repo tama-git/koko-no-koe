@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -11,15 +10,11 @@ import {
 
 import { clampSheetHeight, getClosestSheetLevel, getSheetHeights } from './bottomSheetGeometry';
 import type { SheetLevel } from './bottomSheetGeometry';
+import { PostList } from '../../posts/components/PostList';
 
-const samplePosts = [
-  '山頂から見た夕焼けが最高だった',
-  '静かで落ち着くお気に入りの場所',
-  'ここからの景色を見てほしい',
-  'また訪れたい思い出の場所',
-];
-
-export function PostBottomSheet({ bottomInset = 0 }: { bottomInset?: number }) {
+export function PostBottomSheet({ bottomInset = 0, token, refreshKey, onSelectPost }: {
+  bottomInset?: number; token: string; refreshKey: number; onSelectPost: (id: number) => void;
+}) {
   const [screenHeight, setScreenHeight] = useState(0);
 
   const animatedHeight = useRef(new Animated.Value(0)).current;
@@ -104,15 +99,8 @@ export function PostBottomSheet({ bottomInset = 0 }: { bottomInset?: number }) {
             <View style={styles.handle} />
           </View>
 
-          <Text style={styles.title}>このエリアの投稿</Text>
-
-          <ScrollView style={styles.list}>
-            {samplePosts.map((post, index) => (
-              <View key={index} style={styles.post}>
-                <Text style={styles.postText}>{post}</Text>
-              </View>
-            ))}
-          </ScrollView>
+          <Text style={styles.title}>公開投稿</Text>
+          <PostList scope="public" token={token} refreshKey={refreshKey} onSelectPost={onSelectPost} />
         </SafeAreaView>
       </Animated.View>
     </View>
@@ -154,19 +142,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 12,
     color: '#1D4030',
-  },
-  list: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  post: {
-    padding: 18,
-    backgroundColor: '#F4F6F4',
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  postText: {
-    fontSize: 14,
-    color: '#333333',
   },
 });

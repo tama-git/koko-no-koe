@@ -62,6 +62,6 @@ export function HomeMap() {
 
 const styles = StyleSheet.create({
   noticeArea: { position: 'absolute', top: 0, left: 0, right: 64 },
-  notice: { margin: 12, padding: 12, borderRadius: 10, backgroundColor: '#FFFFFFEE' },
+  notice: { margin: 12, marginTop: 64, padding: 12, borderRadius: 10, backgroundColor: '#FFFFFFEE' },
   noticeText: { fontSize: 13, lineHeight: 20, color: '#1D4030' },
 });

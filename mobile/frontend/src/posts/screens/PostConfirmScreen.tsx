@@ -1,42 +1,49 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { createPost } from '../postService'; // バックエンドにデータを送信するAPI関数
 
 /** 
  * 入力画面から渡されたデータ（メッセージ・写真・位置情報・公開設定）を確認し、最終送信を行う画面 
  */
-export function PostConfirmScreen({ route, navigation }: { route: any; navigation: any }) {
+export function PostConfirmScreen({ route, navigation, token, onCreated }: { route: any; navigation: any; token: string; onCreated: () => void }) {
   // 入力画面（PostCreateScreen）から navigation.navigate で渡されたパラメータを受け取る
-  const { message, imageUri, latitude, longitude, isPublished } = route.params;
+  const { message, imageUri, latitude, longitude, isPublished, imageMimeType, imageFileName } = route.params;
+  const busy = useRef(false);
   const [loading, setLoading] = useState(false); // 送信中の通信状態管理
 
   /**
    * 「この内容で投稿する」ボタンが押されたときの最終送信処理
    */
   const handleFinalSubmit = async () => {
+    if (busy.current) return;
+    busy.current = true;
     try {
       setLoading(true); // 送信中フラグをON
 
       // バックエンド（Django）へデータを送信
-      await createPost({
+      const saved = await createPost({
         message,
         image: imageUri,
         latitude,
         longitude,
         is_published: isPublished,
-      });
+        imageMimeType,
+        imageFileName,
+      }, token);
+      onCreated();
 
       // 送信成功時のアラート表示（OKを押したら最初の画面に戻る）
       Alert.alert('成功', '投稿が完了しました！', [
         { 
           text: 'OK', 
-          onPress: () => navigation.popToTop() 
+          onPress: () => navigation.navigate('PostDetail', { postId: saved.id })
         }
       ]);
     } catch (error: any) {
       // エラーハンドリング
       Alert.alert('エラー', error.message || '投稿に失敗しました');
     } finally {
+      busy.current = false;
       // 処理終了後にローディングを解除
       setLoading(false);
     }

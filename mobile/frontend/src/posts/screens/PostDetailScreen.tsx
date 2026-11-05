@@ -1,63 +1,54 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
 import { getPostById } from '../postService'; // バックエンドから個別データを取得するAPI
+import type { SavedPost } from '../postService';
 
 /**
  * 投稿データの型定義
  */
-interface PostDetail {
-  id: number;
-  message: string;
-  image?: string | null;
-  latitude: number;
-  longitude: number;
-  is_published: boolean;
-  created_at?: string;
-}
-
-export function PostDetailScreen({ route, navigation }: { route: any; navigation: any }) {
+export function PostDetailScreen({ route, navigation, token }: { route: any; navigation: any; token: string }) {
   // 一覧画面から渡された投稿IDを受け取る
   const { postId } = route.params;
 
-  const [post, setPost] = useState<PostDetail | null>(null);
+  const [post, setPost] = useState<SavedPost | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
 
   /**
    * サーバーから特定の投稿詳細データを取得する処理
    */
-  const fetchPostDetail = async () => {
-    try {
-      setLoading(true);
-      // バックエンドからデータを取得
-      const data = await getPostById(postId);
-      setPost(data);
-    } catch (error) {
-      console.error('投稿詳細の取得に失敗しました:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 画面を開いたときにデータを取得
   useEffect(() => {
-    fetchPostDetail();
-  }, [postId]);
+    let active = true;
+    setLoading(true);
+    setPost(null);
+    setError('');
+    void getPostById(postId, token).then(data => {
+      if (active) setPost(data);
+    }).catch(reason => {
+      if (active) setError(reason instanceof Error ? reason.message : '投稿を取得できませんでした。');
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [postId, token, revision]);
 
   // 読み込み中のインジケーター表示
   if (loading) {
     return (
-      <View style={styles.loaderContainer}>
+      <SafeAreaView style={styles.loaderContainer}>
         <ActivityIndicator size="large" color="#2C6049" />
-      </View>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.backButtonText}>戻る</Text></TouchableOpacity>
+      </SafeAreaView>
     );
   }
 
   // データが見つからない場合
   if (!post) {
     return (
-      <View style={styles.loaderContainer}>
-        <Text style={styles.errorText}>投稿が見つかりませんでした。</Text>
-      </View>
+      <SafeAreaView style={styles.loaderContainer}>
+        <Text style={styles.errorText}>{error || '投稿が見つかりませんでした。'}</Text>
+        <TouchableOpacity onPress={() => setRevision(value => value + 1)} style={styles.backButton}><Text style={styles.backButtonText}>再取得</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.backButtonText}>戻る</Text></TouchableOpacity>
+      </SafeAreaView>
     );
   }
 
@@ -84,7 +75,7 @@ export function PostDetailScreen({ route, navigation }: { route: any; navigation
 
             {/* 写真がある場合は表示 */}
             {post.image && (
-              <Image source={{ uri: post.image }} style={styles.postImage} />
+              <Image source={{ uri: post.image, headers: { Authorization: `Bearer ${token}` } }} style={styles.postImage} />
             )}
 
             {/* 位置情報セクション */}
