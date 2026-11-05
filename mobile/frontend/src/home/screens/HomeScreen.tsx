@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '../../shared/components/AppScreen';
 import { HomeMap } from '../../map/components/HomeMap';
@@ -8,6 +8,7 @@ import { MessageInputBar } from '../components/MessageInputBar';
 import { PostComposerModal } from '../../posts/components/PostComposerModal';
 import { PostDetailModal } from '../../posts/components/PostDetailModal';
 import { OwnPostsModal } from '../../posts/components/OwnPostsModal';
+import { UtilityScreen } from '../../utility/screens/UtilityScreen';
 
 type Props = {
   token: string;
@@ -23,7 +24,9 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedPost, setSelectedPost] = useState<number | null>(null);
   const [ownPostsOpen, setOwnPostsOpen] = useState(false);
+  const [utilityOpen, setUtilityOpen] = useState(false);
   const refreshPosts = () => setRefreshKey(value => value + 1);
+  const closeUtility = () => setUtilityOpen(false);
   return (
     <AppScreen edgeToEdge>
       <View style={{ flex: 1 }}>
@@ -31,9 +34,14 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
         {/* 地図の上に、後から描画するボトムシートを重ねる */}
         <HomeMap />
         <SafeAreaView pointerEvents="box-none" style={styles.topActions}>
-          <Pressable accessibilityRole="button" onPress={() => setOwnPostsOpen(true)} style={styles.ownPosts}>
-            <Text style={styles.ownPostsText}>自分の投稿</Text>
-          </Pressable>
+          <View pointerEvents="box-none" style={styles.topActionRow}>
+            <Pressable accessibilityRole="button" onPress={() => setOwnPostsOpen(true)} style={styles.topAction}>
+              <Text numberOfLines={1} style={styles.topActionText}>自分の投稿</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={() => setUtilityOpen(true)} style={styles.topAction}>
+              <Text numberOfLines={1} style={styles.topActionText}>ユーティリティ</Text>
+            </Pressable>
+          </View>
         </SafeAreaView>
         {/* 投稿一覧のボトムシート */}
         <PostBottomSheet bottomInset={inputBarHeight} token={token} refreshKey={refreshKey} onSelectPost={setSelectedPost} />
@@ -43,6 +51,11 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
         {selectedPost !== null && <PostDetailModal postId={selectedPost} token={token} onClose={() => setSelectedPost(null)} />}
         {ownPostsOpen && <OwnPostsModal token={token} refreshKey={refreshKey}
           onClose={() => setOwnPostsOpen(false)} onPostDeleted={refreshPosts} />}
+        {utilityOpen && (
+          <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeUtility}>
+            <UtilityScreen onClose={closeUtility} />
+          </Modal>
+        )}
 
       </View>
     </AppScreen>
@@ -50,9 +63,10 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
 }
 
 const styles = StyleSheet.create({
-  topActions: { position: 'absolute', top: 0, left: 0, right: 72, alignItems: 'flex-start' },
-  ownPosts: { margin: 12, paddingHorizontal: 18, minHeight: 44, justifyContent: 'center', borderRadius: 22, backgroundColor: '#FFFFFF', elevation: 3 },
-  ownPostsText: { color: '#1D4030', fontSize: 15, fontWeight: '700' },
+  topActions: { position: 'absolute', top: 0, left: 0, right: 72 },
+  topActionRow: { flexDirection: 'row', gap: 8, marginLeft: 12, marginVertical: 12 },
+  topAction: { flexShrink: 1, paddingHorizontal: 12, minHeight: 44, justifyContent: 'center', borderRadius: 22, backgroundColor: '#FFFFFF', elevation: 3 },
+  topActionText: { color: '#1D4030', fontSize: 15, fontWeight: '700' },
   container: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 32, paddingBottom: 32, alignItems: 'center' },
   content: { width: '100%', maxWidth: 440 },
   brandName: { color: '#1D4030', fontSize: 20, fontWeight: '700', marginBottom: 36 },
