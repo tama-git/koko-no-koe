@@ -1,14 +1,17 @@
 import { StatusBar } from 'expo-status-bar';
 import type { PropsWithChildren } from 'react';
-import { SafeAreaView, StyleSheet } from 'react-native';
+import { SafeAreaView, StyleSheet, View } from 'react-native';
 
-/** 全画面で使う、安全な表示領域とステータスバー。 */
-export function AppScreen({ children }: PropsWithChildren) {
+type Props = PropsWithChildren<{ edgeToEdge?: boolean }>;
+
+/** 通常は安全な余白を確保し、地図などの背景だけ全画面表示を選べる。 */
+export function AppScreen({ children, edgeToEdge = false }: Props) {
+  const Container = edgeToEdge ? View : SafeAreaView;
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <Container style={styles.safeArea}>
       <StatusBar style="dark" />
       {children}
-    </SafeAreaView>
+    </Container>
   );
 }
 

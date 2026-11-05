@@ -2,11 +2,13 @@
 
 // 環境変数からベースURLを取得
 const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '') ?? '';
-if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) {
-  throw new Error('接続先が設定されていません。開発者に確認してください。');
+function getApiUrl(): string {
+  // フォームを読み込むだけでは例外を出さず、実際の通信時に設定を確認する。
+  if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) {
+    throw new Error('接続先が設定されていません。開発者に確認してください。');
+  }
+  return `${baseUrl}/api/posts/`;
 }
-console.log('接続先:', baseUrl);
-const API_URL = `${baseUrl}/api/posts/`;
 
 /**
  * 投稿一覧を取得する関数 GET
@@ -14,7 +16,7 @@ const API_URL = `${baseUrl}/api/posts/`;
 export async function loadPosts(): Promise<any> {
   try {
     // APIサーバーへGETリクエスト
-    const response = await fetch(API_URL);
+    const response = await fetch(getApiUrl());
 
     // レスポンスが正常でなければエラーを投げる
     if (!response.ok) {
@@ -63,7 +65,7 @@ export async function createPost(postData: {
     }
 
     // APIサーバーへPOSTリクエスト
-    const response = await fetch(API_URL, {
+    const response = await fetch(getApiUrl(), {
       method: 'POST',
       body: formData,
     });

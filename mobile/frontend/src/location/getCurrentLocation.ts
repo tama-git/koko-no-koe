@@ -1,8 +1,18 @@
-/**
- * 位置情報取得の担当場所。現在は許可の要求や取得は行わない。
- * 使用ライブラリ・失敗時の扱い・精度などを確認してから実装する。
- * 未実装のまま呼び出されても、仮の座標を返して成功扱いにしない。
- */
-export async function getCurrentLocation(): Promise<never> {
-  throw new Error('位置情報の取得はまだ実装されていません。');
+import * as Location from 'expo-location';
+import { requestCurrentLocation } from './locationRequest';
+import type { LocationResult } from './locationRequest';
+
+let pending: Promise<LocationResult> | null = null;
+
+/** アプリ利用中の許可だけを要求し、現在地を一度取得する。保存・API送信はしない。 */
+export function getCurrentLocation(): Promise<LocationResult> {
+  // 同時に呼ばれても、システムの許可ダイアログを重複して要求しない。
+  if (!pending) {
+    pending = requestCurrentLocation({
+      requestPermission: () => Location.requestForegroundPermissionsAsync(),
+      servicesEnabled: () => Location.hasServicesEnabledAsync(),
+      getPosition: () => Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+    }).finally(() => { pending = null; });
+  }
+  return pending;
 }

@@ -1,6 +1,11 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '../../shared/components/AppScreen';
+import { HomeMap } from '../../map/components/HomeMap';
+import { PostBottomSheet } from '../components/PostBottomSheet';
+import { MessageInputBar } from '../components/MessageInputBar';
+import { PostComposerModal } from '../../posts/components/PostComposerModal';
 
 type Props = {
   busy: boolean;
@@ -10,18 +15,20 @@ type Props = {
 
 /** トップ画面担当の編集場所。ログアウトの処理は認証担当に渡す。 */
 export function HomeScreen({ busy, message, onLogout }: Props) {
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [inputBarHeight, setInputBarHeight] = useState(0);
   return (
-    <AppScreen>
-      <View style={styles.container}>
-        <View style={styles.content}>
-          <Text style={styles.brandName}>ここの声</Text>
-          <Text style={styles.title}>トップページ</Text>
-          <Text style={styles.description}>ログインしました。ここは仮のトップページです。</Text>
-          <Pressable accessibilityRole="button" disabled={busy} onPress={onLogout} style={[styles.button, busy && styles.buttonPressed]}>
-            <Text style={styles.buttonText}>{busy ? 'ログアウト中…' : 'ログアウト'}</Text>
-          </Pressable>
-          {message ? <Text style={styles.message} accessibilityLiveRegion="polite">{message}</Text> : null}
-        </View>
+    <AppScreen edgeToEdge>
+      <View style={{ flex: 1 }}>
+
+        {/* 地図の上に、後から描画するボトムシートを重ねる */}
+        <HomeMap />
+        {/* 投稿一覧のボトムシート */}
+        <PostBottomSheet bottomInset={inputBarHeight} />
+        <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
+          onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
+        {composerOpen && <PostComposerModal onClose={() => setComposerOpen(false)} />}
+
       </View>
     </AppScreen>
   );
