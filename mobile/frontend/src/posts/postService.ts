@@ -4,9 +4,9 @@ export type SavedPost = {
   id: number;
   message: string;
   image: string | null;
-  latitude: number;
-  longitude: number;
-  is_published: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  is_published: boolean | null;
   created_at: string;
 };
 
@@ -32,32 +32,45 @@ function errorMessage(value: unknown): string | null {
   return null;
 }
 
-async function request(path: string, token: string, body?: FormData): Promise<unknown> {
+const unconfirmedResult = {
+  GET: undefined,
+  POST: '送信結果を確認できませんでした。再送する前に、自分の投稿一覧を確認してください。',
+  DELETE: '削除結果を確認できませんでした。一覧を更新するか、もう一度お試しください。',
+};
+
+async function request(path: string, token: string, options: {
+  method?: 'GET' | 'POST' | 'DELETE';
+  body?: FormData;
+} = {}): Promise<unknown> {
+  const { method = 'GET', body } = options;
+  const resultMessage = unconfirmedResult[method];
   const url = getApiUrl() + path;
   if (!token) throw new PostApiError('ログインし直してください。', 401);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25000);
   try {
     const response = await fetch(url, {
-      method: body ? 'POST' : 'GET',
+      method,
       headers: { Authorization: `Bearer ${token}` },
       body,
       signal: controller.signal,
     });
+    if (method === 'DELETE' && response.status === 204) return;
     let data: unknown;
     try { data = await response.json(); }
-    catch { throw new PostApiError(body
-      ? '送信結果を確認できませんでした。再送する前に、自分の投稿一覧を確認してください。'
-      : 'サーバーの応答を確認できませんでした。', response.status); }
+    catch { throw new PostApiError(resultMessage ?? 'サーバーの応答を確認できませんでした。', response.status); }
     if (!response.ok) throw new PostApiError(errorMessage(data) || '投稿の処理に失敗しました。', response.status);
-    if (response.status !== (body ? 201 : 200)) throw new PostApiError('サーバーの応答を確認できませんでした。');
+    if (method === 'DELETE') throw new PostApiError(unconfirmedResult.DELETE, response.status);
+    if (response.status !== (method === 'POST' ? 201 : 200)) throw new PostApiError('サーバーの応答を確認できませんでした。');
     return data;
   } catch (error) {
     if (error instanceof PostApiError) throw error;
-    throw new PostApiError(body
-      ? '送信結果を確認できませんでした。再送する前に、自分の投稿一覧を確認してください。'
-      : '投稿を取得できませんでした。通信環境を確認してください。');
+    throw new PostApiError(resultMessage ?? '投稿を取得できませんでした。通信環境を確認してください。');
   } finally { clearTimeout(timer); }
+}
+
+function isSavedCoordinate(value: unknown, limit: number): boolean {
+  return value === null || (typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= limit);
 }
 
 function parsePost(value: unknown): SavedPost {
@@ -65,9 +78,8 @@ function parsePost(value: unknown): SavedPost {
   const p = value as Record<string, unknown>;
   if (!Number.isInteger(p.id) || (p.id as number) <= 0 || typeof p.message !== 'string' ||
       !(p.image === null || typeof p.image === 'string') ||
-      typeof p.latitude !== 'number' || !Number.isFinite(p.latitude) || Math.abs(p.latitude) > 90 ||
-      typeof p.longitude !== 'number' || !Number.isFinite(p.longitude) || Math.abs(p.longitude) > 180 ||
-      typeof p.is_published !== 'boolean' || typeof p.created_at !== 'string') {
+      !isSavedCoordinate(p.latitude, 90) || !isSavedCoordinate(p.longitude, 180) ||
+      !(p.is_published === null || typeof p.is_published === 'boolean') || typeof p.created_at !== 'string') {
     throw new PostApiError('投稿データを確認できませんでした。');
   }
   // 認証ヘッダーを送る画像の取得先は、設定した自分のAPIだけに限定する。
@@ -114,12 +126,20 @@ export async function createPost(postData: NewPost, token: string): Promise<Save
     } as unknown as Blob);
   }
   // Content-Typeは指定しない。React Nativeがmultipartの境界を設定する。
-  const result = await request('', token, formData);
+  const result = await request('', token, { method: 'POST', body: formData });
   try { return parsePost(result); }
   catch { throw new PostApiError('送信結果を確認できませんでした。再送する前に、自分の投稿一覧を確認してください。'); }
 }
 
-export async function getPostById(postId: number, token: string): Promise<SavedPost> {
+function postPath(postId: number): string {
   if (!Number.isInteger(postId) || postId <= 0) throw new PostApiError('投稿IDを確認してください。');
-  return parsePost(await request(`${postId}/`, token));
+  return `${postId}/`;
+}
+
+export async function getPostById(postId: number, token: string): Promise<SavedPost> {
+  return parsePost(await request(postPath(postId), token));
+}
+
+export async function deletePost(postId: number, token: string): Promise<void> {
+  await request(postPath(postId), token, { method: 'DELETE' });
 }
