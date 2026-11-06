@@ -153,5 +153,5 @@ export async function deletePost(postId: number, token: string): Promise<void> {
 
 // 非表示
 export async function hidePostApi(postId: number, token: string): Promise<void> {
-  await request(postPath(postId), token, { method: 'POST' });
+  await request(`${postPath(postId)}hidden/`, token, { method: 'POST' });
 }
