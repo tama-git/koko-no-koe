@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react';
-import { StyleSheet, Text, View, TextInput, Switch, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import * as Location from 'expo-location'; // 位置情報（GPS）を取得するためのモジュール
 import * as ImagePicker from 'expo-image-picker'; // その場でカメラを起動して撮影するためのモジュール
+
+import { PostVisibilityOptions } from '../components/PostVisibilityOptions';
 
 /** 
  * メッセージ、写真、現在地を入力・取得し、確認画面へデータを渡すための画面 
@@ -10,7 +12,7 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
   // 入力フォームの状態管理
   const [message, setMessage] = useState('');                  // 投稿するテキストメッセージ
   const [imageUri, setImageUri] = useState<string | null>(null); // 撮影された写真の保存先URI
-  const [isPublished, setIsPublished] = useState(true);          // 公開ステータス（ON/OFF）
+  const [isPublished, setIsPublished] = useState(true);          // 公開範囲
   const [loading, setLoading] = useState(false);               // 処理中（連打防止用）の状態管理
   const busy = useRef(false);
   const [imageMimeType, setImageMimeType] = useState<string | undefined>();
@@ -95,7 +97,7 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
   return (
     // キーボード表示時に画面が隠れないように調整するコンポーネント
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboard}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.content}>
           
           {/* 画面タイトル */}
@@ -130,11 +132,7 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
             </View>
           )}
 
-          {/* 公開設定の切り替えスイッチ */}
-          <View style={styles.row}>
-            <Text style={styles.label}>公開する</Text>
-            <Switch value={isPublished} onValueChange={setIsPublished} />
-          </View>
+          <PostVisibilityOptions value={isPublished} onChange={setIsPublished} disabled={loading} />
 
           {/* 確認画面へ進むボタン（処理中は連打防止のため無効化） */}
           <TouchableOpacity 
@@ -168,7 +166,6 @@ const styles = StyleSheet.create({
   previewImage: { width: '100%', height: 180, borderRadius: 10, marginBottom: 8, resizeMode: 'cover' },
   removeImageButton: { paddingVertical: 4 },
   removeImageButtonText: { color: '#D9534F', fontSize: 13, fontWeight: '600' },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, paddingHorizontal: 4 },
   button: { height: 52, backgroundColor: '#2C6049', borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },

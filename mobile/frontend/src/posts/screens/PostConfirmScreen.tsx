@@ -71,7 +71,7 @@ export function PostConfirmScreen({ route, navigation, token, onCreated }: { rou
           <Text style={styles.value}>緯度: {latitude.toFixed(4)} / 経度: {longitude.toFixed(4)}</Text>
 
           <Text style={styles.label}>【公開設定】</Text>
-          <Text style={styles.value}>{isPublished ? '公開する' : '非公開'}</Text>
+          <Text style={styles.value}>{isPublished ? '公開' : '本人のみ公開'}</Text>
         </View>
 
         {/* 最終送信ボタン */}

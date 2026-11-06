@@ -294,3 +294,43 @@ class PostApiTests(TestCase):
         self.assertEqual(self.client.get(detail).status_code, 404)
         self.assertEqual(self.client.get(photo).status_code, 404)
         self.assertEqual(self.client.post(f'{detail}reports/', {'category': 'spam'}, format='json').status_code, 404)
+
+    def test_author_can_toggle_visibility_and_photo_access_follows_it(self):
+        post_id = self.create(is_published=False, image=self.image()).data['id']
+        detail = f'/api/posts/{post_id}/'
+        visibility = f'{detail}visibility/'
+        other_client = APIClient()
+        other_client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        self.assertEqual(other_client.get(detail).status_code, 404)
+
+        response = self.client.patch(visibility, {'is_published': True}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'is_published': True})
+        self.assertEqual([post['id'] for post in other_client.get('/api/posts/public/').json()], [post_id])
+        self.assertEqual(other_client.get(detail).status_code, 200)
+        photo = other_client.get(f'{detail}image/')
+        self.assertEqual(photo.status_code, 200)
+        photo.close()
+
+        self.assertEqual(self.client.patch(visibility, {'is_published': False}, format='json').status_code, 200)
+        self.assertFalse(self.client.get(detail).json()['is_published'])
+        self.assertEqual(other_client.get('/api/posts/public/').json(), [])
+        self.assertEqual(other_client.get(detail).status_code, 404)
+        self.assertEqual(other_client.get(f'{detail}image/').status_code, 404)
+
+    def test_visibility_update_requires_a_valid_choice_and_the_unmoderated_owner(self):
+        post_id = self.create().data['id']
+        url = f'/api/posts/{post_id}/visibility/'
+        for body in ({}, {'is_published': None}, {'is_published': 'false'},
+                     {'is_published': False, 'message': 'changed'}):
+            self.assertEqual(self.client.patch(url, body, format='json').status_code, 400)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        self.assertEqual(self.client.patch(url, {'is_published': False}, format='json').status_code, 404)
+        self.assertTrue(Post.objects.get(pk=post_id).is_public)
+        self.client.credentials()
+        self.assertEqual(self.client.patch(url, {'is_published': False}, format='json').status_code, 401)
+
+        Post.objects.filter(pk=post_id).update(admin_hidden_at=timezone.now(), is_public=False)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer writer-token')
+        self.assertEqual(self.client.patch(url, {'is_published': True}, format='json').status_code, 403)
+        self.assertFalse(Post.objects.get(pk=post_id).is_public)

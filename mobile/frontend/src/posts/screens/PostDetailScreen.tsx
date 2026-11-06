@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
-import { deletePost, getPostById, PostApiError, hidePostApi } from '../postService';
+import { deletePost, getPostById, PostApiError, hidePostApi, updatePostVisibility } from '../postService';
 import type { SavedPost } from '../postService';
+import { PostVisibilityOptions } from '../components/PostVisibilityOptions';
 import { PostLocationMap } from '../../map/components/PostLocationMap';
 import { ReportScreen } from '../../reports/screens/ReportScreen';
 import { ReactionBar } from '../../likes/components/ReactionBar';
@@ -9,12 +10,13 @@ import { ReactionBar } from '../../likes/components/ReactionBar';
 /**
  * 投稿データの型定義
  */
-export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden}: {
+export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden, onVisibilityChanged }: {
   route: { params: { postId: number } };
   navigation: { goBack: () => void };
   token: string;
   onDeleted?: () => void;
   onHidden?: () => void;
+  onVisibilityChanged?: () => void;
 }) {
   // 一覧画面から渡された投稿IDを受け取る
   const { postId } = route.params;
@@ -24,9 +26,11 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  const [savingVisibility, setSavingVisibility] = useState(false);
   const [hiding, setHidden] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const deletionPending = useRef(false);
+  const visibilityPending = useRef(false);
   const highidingPending = useRef(false);
 
   /**
@@ -46,7 +50,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   }, [postId, token, revision]);
 
   const removePost = async () => {
-    if (!onDeleted || deletionPending.current) return;
+    if (!onDeleted || deletionPending.current || visibilityPending.current) return;
     deletionPending.current = true;
     setDeleting(true);
     try {
@@ -74,6 +78,36 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
       { text: 'キャンセル', style: 'cancel' },
       { text: '削除する', style: 'destructive', onPress: () => { void removePost(); } },
     ]);
+  };
+
+  const saveVisibility = async (next: boolean) => {
+    if (!onVisibilityChanged || visibilityPending.current || deletionPending.current) return;
+    visibilityPending.current = true;
+    setSavingVisibility(true);
+    try {
+      await updatePostVisibility(postId, token, next);
+      setPost(current => current?.id === postId ? { ...current, is_published: next } : current);
+      onVisibilityChanged();
+    } catch (reason) {
+      Alert.alert('公開設定を変更できませんでした', reason instanceof Error ? reason.message : '時間をおいてもう一度お試しください。');
+      setRevision(value => value + 1);
+      onVisibilityChanged();
+    } finally {
+      visibilityPending.current = false;
+      setSavingVisibility(false);
+    }
+  };
+
+  const confirmVisibilityChange = (next: boolean) => {
+    if (!post || (post.is_published === true) === next || post.is_admin_hidden === true) return;
+    Alert.alert(
+      next ? '投稿を公開しますか？' : '本人のみ公開に変更しますか？',
+      next ? '他の会員もこの投稿を閲覧できるようになります。' : '他の会員の地図や一覧から外れます。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '変更する', onPress: () => { void saveVisibility(next); } },
+      ],
+    );
   };
 
   /**
@@ -169,6 +203,12 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
             )}
           </View>
 
+          {onVisibilityChanged && post.is_admin_hidden !== true && (
+            <PostVisibilityOptions value={post.is_published === true} onChange={confirmVisibilityChange}
+              disabled={deleting || savingVisibility} />
+          )}
+          {savingVisibility && <ActivityIndicator color="#2C6049" accessibilityLabel="公開設定を保存中" />}
+
           {/* 投稿内容を表示するカード */}
           <View style={styles.card}>
             {post.is_admin_hidden === true && (
@@ -211,14 +251,14 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
           <TouchableOpacity 
             style={styles.backButton} 
             onPress={() => navigation.goBack()}
-            disabled={deleting}
+            disabled={deleting || savingVisibility}
             activeOpacity={0.8}
           >
             <Text style={styles.backButtonText}>戻る</Text>
           </TouchableOpacity>
           {onDeleted && (
-            <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: deleting, busy: deleting }}
-              style={styles.deleteButton} disabled={deleting} onPress={confirmDeletion}>
+            <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: deleting || savingVisibility, busy: deleting }}
+              style={styles.deleteButton} disabled={deleting || savingVisibility} onPress={confirmDeletion}>
               <Text style={styles.deleteButtonText}>{deleting ? '削除中…' : '投稿を削除'}</Text>
             </TouchableOpacity>
           )}

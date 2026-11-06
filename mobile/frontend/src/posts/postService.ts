@@ -37,36 +37,49 @@ function errorMessage(value: unknown): string | null {
 const unconfirmedResult = {
   GET: undefined,
   POST: '送信結果を確認できませんでした。再送する前に、自分の投稿一覧を確認してください。',
+  PATCH: '変更結果を確認できませんでした。公開設定を再取得して確認してください。',
   DELETE: '削除結果を確認できませんでした。一覧を更新するか、もう一度お試しください。',
 };
 
 async function request(path: string, token: string, options: {
-  method?: 'GET' | 'POST' | 'DELETE';
-  body?: FormData;
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  body?: FormData | string;
 } = {}): Promise<unknown> {
   const { method = 'GET', body } = options;
   const resultMessage = unconfirmedResult[method];
   const url = getApiUrl() + path;
   if (!token) throw new PostApiError('ログインし直してください。', 401);
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (typeof body === 'string') headers['Content-Type'] = 'application/json';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25000);
   try {
     const response = await fetch(url, {
       method,
-      headers: { Authorization: `Bearer ${token}` },
+      headers,
       body,
       signal: controller.signal,
     });
     if (method === 'DELETE' && response.status === 204) return;
     let data: unknown;
     try { data = await response.json(); }
-    catch { throw new PostApiError(resultMessage ?? 'サーバーの応答を確認できませんでした。', response.status); }
+    catch {
+      const message = method === 'PATCH'
+        ? `変更APIからJSON形式の応答がありませんでした（HTTP ${response.status}）。代表PCのDjangoが最新版で起動しているか確認してください。`
+        : resultMessage ?? 'サーバーの応答を確認できませんでした。';
+      throw new PostApiError(message, response.status);
+    }
     if (!response.ok) throw new PostApiError(errorMessage(data) || '投稿の処理に失敗しました。', response.status);
     if (method === 'DELETE') throw new PostApiError(unconfirmedResult.DELETE, response.status);
     if (response.status !== (method === 'POST' ? 201 : 200)) throw new PostApiError('サーバーの応答を確認できませんでした。');
     return data;
   } catch (error) {
     if (error instanceof PostApiError) throw error;
+    if (method === 'PATCH') {
+      throw new PostApiError(controller.signal.aborted
+        ? '公開設定の変更が時間切れになりました。変更済みの可能性があるため、再取得した設定を確認してください。'
+        : '公開設定の変更中に通信が途切れました。Djangoの起動・接続先・Wi-Fiを確認し、再取得した設定を確認してください。');
+    }
     throw new PostApiError(resultMessage ?? '投稿を取得できませんでした。通信環境を確認してください。');
   } finally { clearTimeout(timer); }
 }
@@ -146,6 +159,16 @@ function postPath(postId: number): string {
 
 export async function getPostById(postId: number, token: string): Promise<SavedPost> {
   return parsePost(await request(postPath(postId), token));
+}
+
+export async function updatePostVisibility(postId: number, token: string, isPublished: boolean): Promise<void> {
+  const result = await request(`${postPath(postId)}visibility/`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_published: isPublished }),
+  });
+  if ((result as { is_published?: unknown } | null)?.is_published !== isPublished) {
+    throw new PostApiError('変更APIの応答が選択した公開設定と一致しませんでした。再取得した設定を確認してください。');
+  }
 }
 
 export async function deletePost(postId: number, token: string): Promise<void> {

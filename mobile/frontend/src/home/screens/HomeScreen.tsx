@@ -56,7 +56,7 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
         {composerOpen && <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setComposerOpen(false)} />}
         {selectedPost !== null && <PostDetailModal postId={selectedPost} token={token} onClose={closePost} onHidden={closePost} />}
         {ownPostsOpen && <OwnPostsModal token={token} refreshKey={refreshKey}
-          onClose={() => setOwnPostsOpen(false)} onPostDeleted={refreshPosts} />}
+          onClose={() => setOwnPostsOpen(false)} onPostDeleted={refreshPosts} onVisibilityChanged={refreshPosts} />}
         {utilityOpen && (
           <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeUtility}>
             <UtilityScreen onClose={closeUtility} />

@@ -52,6 +52,48 @@ test('public list uses the authenticated API without sending device coordinates'
   assert.deepEqual(await service.loadPublicPosts('test-token'), [post]);
 });
 
+test('visibility update sends a JSON boolean and checks the saved setting', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  let response = Response.json({ is_published: false });
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'http://localhost:9999/api/posts/7/visibility/');
+    assert.equal(options.method, 'PATCH');
+    assert.equal(options.headers.Authorization, 'Bearer test-token');
+    assert.equal(options.headers['Content-Type'], 'application/json');
+    assert.deepEqual(JSON.parse(options.body), { is_published: false });
+    return response;
+  });
+  await service.updatePostVisibility(7, 'test-token', false);
+  response = Response.json({ is_published: true });
+  await assert.rejects(service.updatePostVisibility(7, 'test-token', false), /選択した公開設定と一致しません/);
+  response = Response.json({ detail: '管理者により非表示のため、公開設定を変更できません。' }, { status: 403 });
+  await assert.rejects(service.updatePostVisibility(7, 'test-token', false), error => error.status === 403);
+});
+
+test('visibility changes work in both directions and distinguish transport and invalid responses', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  let reply;
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    if (reply instanceof Error) throw reply;
+    return reply ?? Response.json(JSON.parse(options.body));
+  });
+  for (const choice of [true, false]) {
+    reply = undefined;
+    await service.updatePostVisibility(7, 'test-token', choice);
+    reply = new TypeError('Network request failed');
+    await assert.rejects(service.updatePostVisibility(7, 'test-token', choice), /通信が途切れました/);
+    for (const status of [200, 404, 500]) {
+      reply = new Response('<html>not JSON</html>', { status });
+      await assert.rejects(service.updatePostVisibility(7, 'test-token', choice),
+        error => error.status === status && error.message.includes(`HTTP ${status}`));
+    }
+    for (const value of [null, {}, { is_published: String(choice) }, { is_published: !choice }]) {
+      reply = Response.json(value);
+      await assert.rejects(service.updatePostVisibility(7, 'test-token', choice), /選択した公開設定と一致しません/);
+    }
+  }
+});
+
 test('delete accepts an empty 204 and distinguishes permission and uncertain results', async (t) => {
   const service = await loadService('http://localhost:9999');
   let response = new Response(null, { status: 204 });
