@@ -84,8 +84,6 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
     setHidden(true);
     try {
       await hidePostApi(postId, token);
-
-      // 非表示完了アラートを表示
       Alert.alert('投稿を非表示にしました', 'この投稿は非表示になりました。自分の投稿一覧を更新します。');
     } catch (reason) {
       if (reason instanceof PostApiError && reason.status === 404) {
@@ -99,6 +97,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
       highidingPending.current = false;
       setHidden(false);
     }
+    onHidden();
   };
 
   /**

@@ -48,7 +48,8 @@ class PostListCreateAPIView(PostAccess, generics.ListCreateAPIView):
 
 class PublicPostListAPIView(PostAccess, generics.ListAPIView):
     def get_queryset(self):
-        return super().get_queryset().filter(self.public_filter())
+        hidden = HiddenPost.objects.filter(user_id=self.request.user).values('post_id')
+        return super().get_queryset().filter(self.public_filter()).exclude(pk__in=hidden)
 
 
 class ReadablePostAccess(PostAccess):
