@@ -4,6 +4,7 @@ import { deletePost, getPostById, PostApiError, hidePostApi } from '../postServi
 import type { SavedPost } from '../postService';
 import { PostLocationMap } from '../../map/components/PostLocationMap';
 import { ReportScreen } from '../../reports/screens/ReportScreen';
+import { ReactionBar } from '../../likes/components/ReactionBar';
 
 /**
  * 投稿データの型定義
@@ -187,6 +188,11 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
             {/* 写真がある場合は表示 */}
             {post.image && (
               <Image source={{ uri: post.image, headers: { Authorization: `Bearer ${token}` } }} style={styles.postImage} />
+            )}
+
+            {/* リアクションバー（公開投稿のみ表示） */}
+            {post.is_published === true && post.is_admin_hidden !== true && (
+              <ReactionBar postId={post.id} token={token} />
             )}
 
             {/* 位置情報セクション */}
