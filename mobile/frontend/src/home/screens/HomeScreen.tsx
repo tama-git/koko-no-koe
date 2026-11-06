@@ -28,6 +28,10 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
   const [utilityOpen, setUtilityOpen] = useState(false);
   const publicPosts = usePostList(token, 'public', refreshKey);
   const refreshPosts = () => setRefreshKey(value => value + 1);
+  const closePost = () => {
+    setSelectedPost(null);
+    refreshPosts();
+  };
   const closeUtility = () => setUtilityOpen(false);
   return (
     <AppScreen edgeToEdge>
@@ -50,7 +54,7 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
         <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
           onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
         {composerOpen && <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setComposerOpen(false)} />}
-        {selectedPost !== null && <PostDetailModal postId={selectedPost} token={token} onClose={() => setSelectedPost(null)} onHidden={() => { setSelectedPost(null); refreshPosts(); }} />}
+        {selectedPost !== null && <PostDetailModal postId={selectedPost} token={token} onClose={closePost} onHidden={closePost} />}
         {ownPostsOpen && <OwnPostsModal token={token} refreshKey={refreshKey}
           onClose={() => setOwnPostsOpen(false)} onPostDeleted={refreshPosts} />}
         {utilityOpen && (

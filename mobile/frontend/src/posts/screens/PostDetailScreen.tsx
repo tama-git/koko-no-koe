@@ -170,6 +170,9 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
 
           {/* 投稿内容を表示するカード */}
           <View style={styles.card}>
+            {post.is_admin_hidden === true && (
+              <Text style={styles.locationText}>管理者により非表示</Text>
+            )}
             
             {/* 投稿日時 */}
             {post.created_at && (

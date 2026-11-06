@@ -274,3 +274,23 @@ class PostApiTests(TestCase):
         PostReport.objects.create(post_id=post_id, reporter=self.other, category=PostReport.Category.SPAM)
         self.assertEqual(self.client.delete(f'/api/posts/{post_id}/').status_code, 204)
         self.assertFalse(PostReport.objects.exists())
+
+    def test_admin_hidden_post_is_visible_only_to_its_author_in_mobile_apis(self):
+        post_id = self.create(image=self.image()).data['id']
+        Post.objects.filter(pk=post_id).update(admin_hidden_at=timezone.now())
+        detail = f'/api/posts/{post_id}/'
+        photo = f'{detail}image/'
+        own_post = self.client.get(detail).json()
+        self.assertTrue(own_post['is_admin_hidden'])
+        self.assertFalse(own_post['can_report'])
+        self.assertEqual(self.client.get('/api/posts/').json()[0]['id'], post_id)
+        owner_photo = self.client.get(photo)
+        self.assertEqual(owner_photo.status_code, 200)
+        owner_photo.close()
+        self.assertEqual(self.client.get('/api/posts/public/').json(), [])
+
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        self.assertEqual(self.client.get('/api/posts/public/').json(), [])
+        self.assertEqual(self.client.get(detail).status_code, 404)
+        self.assertEqual(self.client.get(photo).status_code, 404)
+        self.assertEqual(self.client.post(f'{detail}reports/', {'category': 'spam'}, format='json').status_code, 404)
