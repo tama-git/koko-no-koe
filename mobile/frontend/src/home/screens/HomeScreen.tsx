@@ -8,6 +8,7 @@ import { MessageInputBar } from '../components/MessageInputBar';
 import { PostComposerModal } from '../../posts/components/PostComposerModal';
 import { PostDetailModal } from '../../posts/components/PostDetailModal';
 import { OwnPostsModal } from '../../posts/components/OwnPostsModal';
+import { usePostList } from '../../posts/usePostList';
 import { UtilityScreen } from '../../utility/screens/UtilityScreen';
 
 type Props = {
@@ -25,6 +26,7 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
   const [selectedPost, setSelectedPost] = useState<number | null>(null);
   const [ownPostsOpen, setOwnPostsOpen] = useState(false);
   const [utilityOpen, setUtilityOpen] = useState(false);
+  const publicPosts = usePostList(token, 'public', refreshKey);
   const refreshPosts = () => setRefreshKey(value => value + 1);
   const closeUtility = () => setUtilityOpen(false);
   return (
@@ -32,7 +34,7 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
       <View style={{ flex: 1 }}>
 
         {/* 地図の上に、後から描画するボトムシートを重ねる */}
-        <HomeMap />
+        <HomeMap posts={publicPosts.posts} onSelectPost={setSelectedPost} />
         <SafeAreaView pointerEvents="box-none" style={styles.topActions}>
           <View pointerEvents="box-none" style={styles.topActionRow}>
             <Pressable accessibilityRole="button" onPress={() => setOwnPostsOpen(true)} style={styles.topAction}>
@@ -44,7 +46,7 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
           </View>
         </SafeAreaView>
         {/* 投稿一覧のボトムシート */}
-        <PostBottomSheet bottomInset={inputBarHeight} token={token} refreshKey={refreshKey} onSelectPost={setSelectedPost} />
+        <PostBottomSheet bottomInset={inputBarHeight} list={publicPosts} onSelectPost={setSelectedPost} />
         <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
           onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
         {composerOpen && <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setComposerOpen(false)} />}

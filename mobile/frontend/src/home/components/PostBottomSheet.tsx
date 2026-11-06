@@ -11,9 +11,10 @@ import {
 import { clampSheetHeight, getClosestSheetLevel, getSheetHeights } from './bottomSheetGeometry';
 import type { SheetLevel } from './bottomSheetGeometry';
 import { PostList } from '../../posts/components/PostList';
+import type { PostListState } from '../../posts/usePostList';
 
-export function PostBottomSheet({ bottomInset = 0, token, refreshKey, onSelectPost }: {
-  bottomInset?: number; token: string; refreshKey: number; onSelectPost: (id: number) => void;
+export function PostBottomSheet({ bottomInset = 0, list, onSelectPost }: {
+  bottomInset?: number; list: PostListState; onSelectPost: (id: number) => void;
 }) {
   const [screenHeight, setScreenHeight] = useState(0);
 
@@ -100,7 +101,7 @@ export function PostBottomSheet({ bottomInset = 0, token, refreshKey, onSelectPo
           </View>
 
           <Text style={styles.title}>公開投稿</Text>
-          <PostList scope="public" token={token} refreshKey={refreshKey} onSelectPost={onSelectPost} />
+          <PostList scope="public" list={list} onSelectPost={onSelectPost} />
         </SafeAreaView>
       </Animated.View>
     </View>

@@ -11,7 +11,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import MobileSession, MobileUser
-from .models import Post
+from .models import Post, PostReport
 
 
 class PostApiTests(TestCase):
@@ -218,3 +218,59 @@ class PostApiTests(TestCase):
         self.assertEqual(self.client.delete(f'/api/posts/{text_only.pk}/').status_code, 204)
         self.assertEqual(list(Post.objects.values_list('pk', flat=True)), [shared])
         self.assertTrue(image.storage.exists(image.name))
+
+    def test_report_uses_the_logged_in_member_and_resets_status_only_on_new_report(self):
+        post_id = self.create().data['id']
+        url = f'/api/posts/{post_id}/reports/'
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        response = self.client.post(url, {'category': 'spam', 'reporter': self.owner.pk}, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json(), {'status': 'received'})
+        self.assertEqual(PostReport.objects.get().reporter, self.other)
+        self.assertEqual(PostReport.objects.get().details, '')
+        self.assertEqual(Post.objects.get(pk=post_id).report_status, Post.ReportStatus.PENDING)
+
+        Post.objects.filter(pk=post_id).update(report_status=Post.ReportStatus.RESOLVED)
+        self.assertEqual(self.client.post(url, {'category': 'spam'}, format='json').status_code, 409)
+        self.assertEqual(Post.objects.get(pk=post_id).report_status, Post.ReportStatus.RESOLVED)
+        self.assertEqual(PostReport.objects.count(), 1)
+
+        third_member = MobileUser.objects.create_user(username='third', email='third@example.com', password='Third123')
+        MobileSession.objects.create(user=third_member, token_hash=hashlib.sha256(b'third-token').hexdigest(),
+                                     expires_at=timezone.now() + timedelta(hours=1))
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer third-token')
+        self.assertEqual(self.client.post(url, {'category': 'other', 'details': '補足'}, format='json').status_code, 201)
+        self.assertEqual(Post.objects.get(pk=post_id).report_status, Post.ReportStatus.PENDING)
+        self.assertEqual(PostReport.objects.count(), 2)
+
+    def test_report_categories_required_details_and_length_are_validated(self):
+        post_id = self.create().data['id']
+        url = f'/api/posts/{post_id}/reports/'
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        for payload in ({}, {'category': 'unknown'}, {'category': 'other'},
+                        {'category': 'other', 'details': ' \t '}, {'category': 'spam', 'details': 'あ' * 101}):
+            with self.subTest(payload=payload):
+                self.assertEqual(self.client.post(url, payload, format='json').status_code, 400)
+        self.assertFalse(PostReport.objects.exists())
+        self.assertIsNone(Post.objects.get(pk=post_id).report_status)
+        self.assertEqual(self.client.post(url, {'category': 'other', 'details': 'あ' * 100}, format='json').status_code, 201)
+
+    def test_reports_can_only_be_sent_for_another_members_public_post(self):
+        public = self.create().data['id']
+        private = self.create(is_published=False).data['id']
+        data = {'category': 'privacy'}
+        self.assertFalse(self.client.get(f'/api/posts/{public}/').json()['can_report'])
+        self.assertEqual(self.client.post(f'/api/posts/{public}/reports/', data, format='json').status_code, 404)
+        self.client.credentials()
+        self.assertEqual(self.client.post(f'/api/posts/{public}/reports/', data, format='json').status_code, 401)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        self.assertTrue(self.client.get(f'/api/posts/{public}/').json()['can_report'])
+        self.assertEqual(self.client.post(f'/api/posts/{private}/reports/', data, format='json').status_code, 404)
+        self.assertEqual(self.client.get(f'/api/posts/{public}/reports/').status_code, 405)
+        self.assertFalse(PostReport.objects.exists())
+
+    def test_deleting_a_post_removes_its_reports(self):
+        post_id = self.create().data['id']
+        PostReport.objects.create(post_id=post_id, reporter=self.other, category=PostReport.Category.SPAM)
+        self.assertEqual(self.client.delete(f'/api/posts/{post_id}/').status_code, 204)
+        self.assertFalse(PostReport.objects.exists())

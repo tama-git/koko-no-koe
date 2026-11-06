@@ -4,14 +4,15 @@ from PIL import Image, ImageOps
 from django.db import transaction
 from django.db.models import Q
 from django.http import FileResponse
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.exceptions import APIException, NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import JSONRenderer
+from rest_framework.response import Response
 
 from .authentication import MobileBearerAuthentication
-from .models import Post
-from .serializers import PostSerializer
+from .models import Post, PostReport
+from .serializers import PostDetailSerializer, PostReportSerializer, PostSerializer
 
 
 class PostAccess:
@@ -61,6 +62,8 @@ class PostPhotoDeletionError(APIException):
 
 
 class PostDetailAPIView(ReadablePostAccess, generics.RetrieveDestroyAPIView):
+    serializer_class = PostDetailSerializer
+
     def get_queryset(self):
         queryset = super().get_queryset()
         if self.request.method == 'DELETE':
@@ -80,6 +83,30 @@ class PostDetailAPIView(ReadablePostAccess, generics.RetrieveDestroyAPIView):
                 except OSError as error:
                     # ファイルを消せなければ投稿レコードを戻し、再試行できるようにする。
                     raise PostPhotoDeletionError() from error
+
+
+class AlreadyReported(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = 'この投稿はすでに通報済みです。'
+
+
+class PostReportAPIView(PostAccess, generics.GenericAPIView):
+    serializer_class = PostReportSerializer
+
+    def post(self, request, pk):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        target = self.get_queryset().filter(self.public_filter(), pk=pk).exclude(user_id=request.user)
+        with transaction.atomic():
+            # 通報の保存と状態更新をまとめ、重複時は状態変更も取り消す。
+            if not target.update(report_status=Post.ReportStatus.PENDING):
+                raise NotFound('通報できる投稿が見つかりませんでした。')
+            _, created = PostReport.objects.get_or_create(
+                post_id=pk, reporter=request.user, defaults=serializer.validated_data,
+            )
+            if not created:
+                raise AlreadyReported()
+        return Response({'status': 'received'}, status=status.HTTP_201_CREATED)
 
 
 class PostImageAPIView(ReadablePostAccess, generics.GenericAPIView):
