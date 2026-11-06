@@ -4,11 +4,12 @@ import { PostList } from './PostList';
 import { PostDetailScreen } from '../screens/PostDetailScreen';
 import { usePostList } from '../usePostList';
 
-export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted }: {
+export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted, onVisibilityChanged }: {
   token: string;
   refreshKey: number;
   onClose: () => void;
   onPostDeleted: () => void;
+  onVisibilityChanged: () => void;
 }) {
   const [postId, setPostId] = useState<number | null>(null);
   const list = usePostList(token, 'own', refreshKey);
@@ -24,7 +25,7 @@ export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted }: {
     onRequestClose={postId !== null ? returnToList : onClose}>
     {postId !== null
       ? <PostDetailScreen token={token} route={{ params: { postId } }}
-          navigation={{ goBack: returnToList }} onDeleted={finishDeletion} />
+          navigation={{ goBack: returnToList }} onDeleted={finishDeletion} onVisibilityChanged={onVisibilityChanged} />
       : <SafeAreaView style={styles.screen}>
           <View style={styles.header}><Text style={styles.title}>自分の投稿</Text>
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.close}><Text>閉じる</Text></Pressable></View>

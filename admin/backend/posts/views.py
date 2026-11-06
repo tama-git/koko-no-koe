@@ -5,7 +5,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.http import FileResponse
 from rest_framework import generics, status
-from rest_framework.exceptions import APIException, NotFound
+from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
+from rest_framework.parsers import JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
@@ -83,6 +84,23 @@ class PostDetailAPIView(ReadablePostAccess, generics.RetrieveDestroyAPIView):
                 except OSError as error:
                     # ファイルを消せなければ投稿レコードを戻し、再試行できるようにする。
                     raise PostPhotoDeletionError() from error
+
+
+class PostVisibilityAPIView(PostAccess, generics.GenericAPIView):
+    parser_classes = [JSONParser]
+
+    def patch(self, request, pk):
+        data = request.data
+        if not isinstance(data, dict) or set(data) != {'is_published'} or not isinstance(data['is_published'], bool):
+            raise ValidationError({'is_published': '公開または本人のみ公開を選択してください。'})
+
+        owned_post = Post.objects.filter(pk=pk, user_id=request.user)
+        # 管理者非表示の確認と公開設定の保存を、同じ更新クエリで実行する。
+        if not owned_post.filter(admin_hidden_at__isnull=True).update(is_public=data['is_published']):
+            if not owned_post.exists():
+                raise NotFound('投稿が見つかりませんでした。')
+            raise PermissionDenied('管理者により非表示のため、公開設定を変更できません。')
+        return Response({'is_published': data['is_published']})
 
 
 
