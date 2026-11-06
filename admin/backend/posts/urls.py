@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import PostListCreateAPIView, PublicPostListAPIView, PostDetailAPIView, PostImageAPIView, PostReportAPIView
+from .views import PostListCreateAPIView, PublicPostListAPIView, PostDetailAPIView, PostImageAPIView, PostReportAPIView, PostHideAPIView
 
 urlpatterns = [
     # モバイルアプリからの通信を受け付けるエンドポイント
@@ -8,4 +8,5 @@ urlpatterns = [
     path('<int:pk>/', PostDetailAPIView.as_view(), name='post-detail'),
     path('<int:pk>/image/', PostImageAPIView.as_view(), name='post-image'),
     path('<int:pk>/reports/', PostReportAPIView.as_view(), name='post-report'),
+    path('<int:pk>/hidden/', PostHideAPIView.as_view(), name='post-hide'),
 ]
