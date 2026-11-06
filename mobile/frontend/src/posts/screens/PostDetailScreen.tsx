@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
-import { deletePost, getPostById, PostApiError } from '../postService';
+import { deletePost, getPostById, PostApiError, hidePostApi } from '../postService';
 import type { SavedPost } from '../postService';
 import { PostLocationMap } from '../../map/components/PostLocationMap';
 import { ReportScreen } from '../../reports/screens/ReportScreen';
@@ -8,11 +8,12 @@ import { ReportScreen } from '../../reports/screens/ReportScreen';
 /**
  * 投稿データの型定義
  */
-export function PostDetailScreen({ route, navigation, token, onDeleted }: {
+export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden}: {
   route: { params: { postId: number } };
   navigation: { goBack: () => void };
   token: string;
   onDeleted?: () => void;
+  onHidden?: () => void;
 }) {
   // 一覧画面から渡された投稿IDを受け取る
   const { postId } = route.params;
@@ -22,8 +23,10 @@ export function PostDetailScreen({ route, navigation, token, onDeleted }: {
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  const [hiding, setHidden] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const deletionPending = useRef(false);
+  const highidingPending = useRef(false);
 
   /**
    * サーバーから特定の投稿詳細データを取得する処理
@@ -47,6 +50,9 @@ export function PostDetailScreen({ route, navigation, token, onDeleted }: {
     setDeleting(true);
     try {
       await deletePost(postId, token);
+
+      // 削除完了アラートを表示
+      Alert.alert('投稿を削除しました', '自分の投稿一覧を更新します。');
     } catch (reason) {
       if (reason instanceof PostApiError && reason.status === 404) {
         Alert.alert('投稿が見つかりませんでした', '自分の投稿一覧を更新します。');
@@ -69,20 +75,56 @@ export function PostDetailScreen({ route, navigation, token, onDeleted }: {
     ]);
   };
 
+  /**
+   * 投稿を非表示する実際の処理
+   */
+  const hidePost = async () => {
+    if (!onHidden || highidingPending.current) return;
+    highidingPending.current = true;
+    setHidden(true);
+    try {
+      await hidePostApi(postId, token);
+
+      // 非表示完了アラートを表示
+      Alert.alert('投稿を非表示にしました', 'この投稿は非表示になりました。自分の投稿一覧を更新します。');
+    } catch (reason) {
+      if (reason instanceof PostApiError && reason.status === 404) {
+        Alert.alert('投稿が見つかりませんでした', '自分の投稿一覧を更新します。');
+        onHidden();
+      } else {
+        Alert.alert('非表示を完了できませんでした', reason instanceof Error ? reason.message : '時間をおいてもう一度お試しください。');
+      }
+      return;
+    } finally {
+      highidingPending.current = false;
+      setHidden(false);
+    }
+  };
+
+  /**
+   * 投稿を非表示にするか確認するダイアログを表示する
+   */
+  const confirmHide = () => {
+    Alert.alert('投稿を非表示にしますか？', 'この操作を行うと、この投稿は非表示になり、一度実行すると元に戻すことはできません。本当によろしいですか？', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '非表示にする', style: 'destructive', onPress: () => { void hidePost(); } },
+    ]);
+  };
+  
   const openPostActions = () => {
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions({
         options: ['通報', '非表示', 'キャンセル'],
-        disabledButtonIndices: [1],
-        cancelButtonIndex: 2,
+        cancelButtonIndex: 2,     
       }, index => {
         if (index === 0) setReportOpen(true);
+        if (index === 1) confirmHide();
       });
       return;
     }
     Alert.alert('投稿の操作', undefined, [
       { text: '通報', onPress: () => setReportOpen(true) },
-      { text: '非表示（準備中）' },
+      { text: '非表示', onPress: () => confirmHide() },
       { text: 'キャンセル', style: 'cancel' },
     ]);
   };

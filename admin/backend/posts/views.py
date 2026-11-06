@@ -11,7 +11,7 @@ from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 
 from .authentication import MobileBearerAuthentication
-from .models import Post, PostReport
+from .models import HiddenPost, Post, PostReport
 from .serializers import PostDetailSerializer, PostReportSerializer, PostSerializer
 
 
@@ -85,6 +85,8 @@ class PostDetailAPIView(ReadablePostAccess, generics.RetrieveDestroyAPIView):
                     raise PostPhotoDeletionError() from error
 
 
+
+    
 class AlreadyReported(APIException):
     status_code = status.HTTP_409_CONFLICT
     default_detail = 'この投稿はすでに通報済みです。'
@@ -107,6 +109,22 @@ class PostReportAPIView(PostAccess, generics.GenericAPIView):
             if not created:
                 raise AlreadyReported()
         return Response({'status': 'received'}, status=status.HTTP_201_CREATED)
+
+
+class AlreadyHidden(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = 'この投稿はすでに非表示にしています。'
+
+
+class PostHideAPIView(PostAccess, generics.GenericAPIView):
+    def post(self, request, pk):
+        target = self.get_queryset().filter(self.public_filter(), pk=pk).exclude(user_id=request.user)
+        if not target.exists():
+            raise NotFound('非表示にできる投稿が見つかりませんでした。')
+        _, created = HiddenPost.objects.get_or_create(user_id=request.user, post_id_id=pk)
+        if not created:
+            raise AlreadyHidden()
+        return Response({'status': 'hidden'}, status=status.HTTP_201_CREATED)
 
 
 class PostImageAPIView(ReadablePostAccess, generics.GenericAPIView):
