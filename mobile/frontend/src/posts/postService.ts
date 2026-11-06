@@ -8,6 +8,7 @@ export type SavedPost = {
   longitude: number | null;
   is_published: boolean | null;
   created_at: string;
+  can_report?: boolean;
 };
 
 export class PostApiError extends Error {

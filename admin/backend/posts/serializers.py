@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Post
+from .models import Post, PostReport
 from django.urls import reverse
 
 class PostSerializer(serializers.ModelSerializer):
@@ -31,3 +31,23 @@ class PostSerializer(serializers.ModelSerializer):
             # 保存先を直接公開せず、認証と閲覧条件を確認する画像取得URLを返す。
             data['image'] = self.context['request'].build_absolute_uri(reverse('post-image', args=[instance.pk]))
         return data
+
+
+class PostDetailSerializer(PostSerializer):
+    can_report = serializers.SerializerMethodField()
+
+    class Meta(PostSerializer.Meta):
+        fields = (*PostSerializer.Meta.fields, 'can_report')
+
+    def get_can_report(self, post):
+        return post.is_public is True and post.user_id_id != self.context['request'].user.pk
+
+
+class PostReportSerializer(serializers.Serializer):
+    category = serializers.ChoiceField(choices=PostReport.Category.choices)
+    details = serializers.CharField(max_length=100, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        if attrs['category'] == PostReport.Category.OTHER and not attrs['details']:
+            raise serializers.ValidationError({'details': 'その他を選んだ場合は理由を入力してください。'})
+        return attrs

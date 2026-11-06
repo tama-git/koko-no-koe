@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Alert, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
+import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
 import { deletePost, getPostById, PostApiError } from '../postService';
 import type { SavedPost } from '../postService';
+import { PostLocationMap } from '../../map/components/PostLocationMap';
+import { ReportScreen } from '../../reports/screens/ReportScreen';
 
 /**
  * 投稿データの型定義
@@ -20,6 +22,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted }: {
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const deletionPending = useRef(false);
 
   /**
@@ -66,6 +69,24 @@ export function PostDetailScreen({ route, navigation, token, onDeleted }: {
     ]);
   };
 
+  const openPostActions = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions({
+        options: ['通報', '非表示', 'キャンセル'],
+        disabledButtonIndices: [1],
+        cancelButtonIndex: 2,
+      }, index => {
+        if (index === 0) setReportOpen(true);
+      });
+      return;
+    }
+    Alert.alert('投稿の操作', undefined, [
+      { text: '通報', onPress: () => setReportOpen(true) },
+      { text: '非表示（準備中）' },
+      { text: 'キャンセル', style: 'cancel' },
+    ]);
+  };
+
   // 読み込み中のインジケーター表示
   if (loading) {
     return (
@@ -87,13 +108,24 @@ export function PostDetailScreen({ route, navigation, token, onDeleted }: {
     );
   }
 
+  if (reportOpen && post.can_report === true) {
+    return <ReportScreen postId={post.id} message={post.message} token={token} onClose={() => setReportOpen(false)} />;
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.content}>
           
           {/* 画面タイトル */}
-          <Text style={styles.screenTitle}>投稿詳細</Text>
+          <View style={styles.header}>
+            <Text accessibilityRole="header" style={styles.screenTitle}>投稿詳細</Text>
+            {post.can_report === true && (
+              <Pressable accessibilityRole="button" accessibilityLabel="投稿の操作" onPress={openPostActions} style={styles.actionButton}>
+                <Text style={styles.actionText}>…</Text>
+              </Pressable>
+            )}
+          </View>
 
           {/* 投稿内容を表示するカード */}
           <View style={styles.card}>
@@ -115,8 +147,9 @@ export function PostDetailScreen({ route, navigation, token, onDeleted }: {
 
             {/* 位置情報セクション */}
             <View style={styles.locationContainer}>
-              <Text style={styles.locationTitle}>📍 撮影場所の位置情報</Text>
+              <Text style={styles.locationTitle}>投稿場所</Text>
               {post.latitude !== null && post.longitude !== null ? <>
+                <PostLocationMap coordinate={{ latitude: post.latitude, longitude: post.longitude }} />
                 <Text style={styles.locationText}>緯度: {post.latitude.toFixed(4)}</Text>
                 <Text style={styles.locationText}>経度: {post.longitude.toFixed(4)}</Text>
               </> : <Text style={styles.locationText}>位置情報なし</Text>}
@@ -174,11 +207,14 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 440,
   },
+  header: { minHeight: 44, justifyContent: 'center', marginBottom: 20 },
+  actionButton: { position: 'absolute', right: 0, top: 0, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  actionText: { fontSize: 26, fontWeight: '700', color: '#2C6049' },
   screenTitle: {
     fontSize: 22,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 20,
+    paddingHorizontal: 44,
     color: '#1C3D2D',
   },
   card: {
@@ -228,6 +264,7 @@ const styles = StyleSheet.create({
   locationText: {
     fontSize: 13,
     color: '#5C7A6B',
+    marginTop: 4,
   },
   backButton: {
     height: 48,
