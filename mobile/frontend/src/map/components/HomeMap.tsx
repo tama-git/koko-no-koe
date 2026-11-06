@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import MapView from 'react-native-maps';
+import MapView, { Marker } from 'react-native-maps';
 import type { Region } from 'react-native-maps';
 import { useCurrentLocation } from '../../location/useCurrentLocation';
+import type { SavedPost } from '../../posts/postService';
 
 // Phase 1の仮設定。現在地ではなく、日本全体を見渡すための初期範囲。
 const INITIAL_JAPAN_REGION: Region = {
@@ -13,7 +14,10 @@ const INITIAL_JAPAN_REGION: Region = {
 };
 
 /** トップ画面の地図。iPhoneの既定プロバイダー（Apple Maps）を使う。 */
-export function HomeMap() {
+export function HomeMap({ posts, onSelectPost }: {
+  posts: readonly SavedPost[];
+  onSelectPost: (id: number) => void;
+}) {
   const map = useRef<MapView>(null);
   const [mapReady, setMapReady] = useState(false);
   const centered = useRef(false);
@@ -48,7 +52,15 @@ export function HomeMap() {
         zoomEnabled
         showsUserLocation={location.status === 'ready'}
         showsMyLocationButton={false}
-      />
+      >
+        {posts.map(({ id, latitude, longitude, is_published }) => {
+          if (is_published !== true || latitude === null || longitude === null) return null;
+          return (
+            <Marker key={id} coordinate={{ latitude, longitude }} pinColor="#B43A37"
+              title="投稿を見る" onPress={() => onSelectPost(id)} />
+          );
+        })}
+      </MapView>
       {message ? (
         <SafeAreaView pointerEvents="box-none" style={styles.noticeArea}>
           <View pointerEvents="none" style={styles.notice}>

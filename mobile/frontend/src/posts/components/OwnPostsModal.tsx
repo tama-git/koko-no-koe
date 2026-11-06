@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { PostList } from './PostList';
 import { PostDetailScreen } from '../screens/PostDetailScreen';
+import { usePostList } from '../usePostList';
 
 export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted }: {
   token: string;
@@ -10,19 +11,24 @@ export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted }: {
   onPostDeleted: () => void;
 }) {
   const [postId, setPostId] = useState<number | null>(null);
+  const list = usePostList(token, 'own', refreshKey);
+  const returnToList = () => {
+    setPostId(null);
+    list.refresh();
+  };
   const finishDeletion = () => {
     setPostId(null);
     onPostDeleted();
   };
   return <Modal visible animationType="slide" presentationStyle="fullScreen"
-    onRequestClose={() => { if (postId !== null) setPostId(null); else onClose(); }}>
+    onRequestClose={postId !== null ? returnToList : onClose}>
     {postId !== null
       ? <PostDetailScreen token={token} route={{ params: { postId } }}
-          navigation={{ goBack: () => setPostId(null) }} onDeleted={finishDeletion} />
+          navigation={{ goBack: returnToList }} onDeleted={finishDeletion} />
       : <SafeAreaView style={styles.screen}>
           <View style={styles.header}><Text style={styles.title}>自分の投稿</Text>
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.close}><Text>閉じる</Text></Pressable></View>
-          <PostList scope="own" token={token} refreshKey={refreshKey} onSelectPost={setPostId} />
+          <PostList scope="own" list={list} onSelectPost={setPostId} />
         </SafeAreaView>}
   </Modal>;
 }

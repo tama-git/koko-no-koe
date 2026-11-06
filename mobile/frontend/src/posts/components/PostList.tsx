@@ -1,33 +1,16 @@
-import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { loadPosts, loadPublicPosts } from '../postService';
-import type { SavedPost } from '../postService';
+import type { PostListScope, PostListState } from '../usePostList';
 
 /** 自分の一覧と公開一覧で、読み込み・エラー・投稿カードを共用する。 */
-export function PostList({ token, refreshKey, onSelectPost, scope }: {
-  token: string; refreshKey: number; onSelectPost: (id: number) => void;
-  scope: 'own' | 'public';
+export function PostList({ list, onSelectPost, scope }: {
+  list: PostListState;
+  onSelectPost: (id: number) => void;
+  scope: PostListScope;
 }) {
-  const [posts, setPosts] = useState<SavedPost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [retry, setRetry] = useState(0);
-  useEffect(() => {
-    let active = true;
-    setPosts([]);
-    setError('');
-    setLoading(true);
-    const promise = scope === 'public' ? loadPublicPosts(token) : loadPosts(token);
-    void promise.then(data => { if (active) setPosts(data); })
-      .catch(reason => { if (active) setError(reason instanceof Error ? reason.message : '投稿を取得できませんでした。'); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [token, refreshKey, retry, scope]);
-
-  const refresh = () => { if (!loading) setRetry(value => value + 1); };
+  const { posts, loading, error, refresh, refreshing } = list;
   return <ScrollView contentContainerStyle={styles.list} alwaysBounceVertical
-    refreshControl={<RefreshControl refreshing={loading && retry > 0} onRefresh={refresh} />}>
-    {loading && retry === 0 && <ActivityIndicator color="#2C6049" />}
+    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
+    {loading && !refreshing && <ActivityIndicator color="#2C6049" />}
     {error ? <View>
       <Text accessibilityLiveRegion="polite">{error}</Text>
       <Pressable accessibilityRole="button" style={styles.refresh} onPress={refresh}><Text style={styles.link}>再取得</Text></Pressable>
