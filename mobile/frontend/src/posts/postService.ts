@@ -113,20 +113,26 @@ export type NewPost = {
 
 export async function createPost(postData: NewPost, token: string): Promise<SavedPost> {
   if (!postData.message?.trim() && !postData.image) throw new PostApiError('メッセージまたは写真を入力してください。');
+  
   const formData = new FormData();
-  // DBの小数点以下7桁にそろえ、端末の浮動小数点の桁数による入力エラーを防ぐ。
   formData.append('latitude', postData.latitude.toFixed(7));
   formData.append('longitude', postData.longitude.toFixed(7));
   formData.append('is_published', String(postData.is_published));
   formData.append('message', postData.message?.trim() || '');
+
+  // 画像がある場合は、Expo/React Nativeのfetchで扱えるBlob形式に変換して追加する
   if (postData.image) {
-    formData.append('image', {
-      uri: postData.image,
-      name: postData.imageFileName || (postData.imageMimeType === 'image/png' ? 'photo.png' : 'photo.jpg'),
-      type: postData.imageMimeType || 'image/jpeg',
-    } as unknown as Blob);
+    try {
+      const response = await fetch(postData.image);
+      const blob = await response.blob();
+      const fileName = postData.imageFileName || (postData.imageMimeType === 'image/png' ? 'photo.png' : 'photo.jpg');
+      
+      formData.append('image', blob, fileName);
+    } catch {
+      throw new PostApiError('画像ファイルの処理に失敗しました。');
+    }
   }
-  // Content-Typeは指定しない。React Nativeがmultipartの境界を設定する。
+
   const result = await request('', token, { method: 'POST', body: formData });
   try { return parsePost(result); }
   catch { throw new PostApiError('送信結果を確認できませんでした。再送する前に、自分の投稿一覧を確認してください。'); }
