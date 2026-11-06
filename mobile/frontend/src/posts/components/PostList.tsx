@@ -18,7 +18,7 @@ export function PostList({ list, onSelectPost, scope }: {
     {!loading && !error && posts.length === 0 && <Text>{scope === 'public' ? 'まだ公開投稿がありません。' : 'まだ投稿がありません。トップ下部のバーから投稿できます。'}</Text>}
     {posts.map(post => <Pressable key={post.id} accessibilityRole="button" onPress={() => onSelectPost(post.id)} style={styles.post}>
       <Text style={styles.postText}>{post.message || '写真の投稿'}</Text>
-      <Text>{scope === 'public' ? '匿名' : post.is_published ? '公開' : '非公開'} ・ {new Date(post.created_at).toLocaleString('ja-JP')}</Text>
+      <Text>{scope === 'public' ? '匿名' : post.is_admin_hidden === true ? '管理者により非表示' : post.is_published ? '公開' : '非公開'} ・ {new Date(post.created_at).toLocaleString('ja-JP')}</Text>
     </Pressable>)}
   </ScrollView>;
 }

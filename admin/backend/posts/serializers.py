@@ -11,10 +11,11 @@ class PostSerializer(serializers.ModelSerializer):
     longitude = serializers.DecimalField(max_digits=10, decimal_places=7, min_value=-180, max_value=180, coerce_to_string=False)
     message = serializers.CharField(required=False, allow_blank=True, default='')
     image = serializers.ImageField(required=False, allow_null=True)
+    is_admin_hidden = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Post
-        fields = ('id', 'message', 'image', 'latitude', 'longitude', 'is_published', 'created_at')
+        fields = ('id', 'message', 'image', 'latitude', 'longitude', 'is_published', 'is_admin_hidden', 'created_at')
         read_only_fields = ('id', 'created_at')
 
     def validate(self, attrs):
@@ -40,7 +41,7 @@ class PostDetailSerializer(PostSerializer):
         fields = (*PostSerializer.Meta.fields, 'can_report')
 
     def get_can_report(self, post):
-        return post.is_public is True and post.user_id_id != self.context['request'].user.pk
+        return post.is_public is True and not post.is_admin_hidden and post.user_id_id != self.context['request'].user.pk
 
 
 class PostReportSerializer(serializers.Serializer):

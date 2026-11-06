@@ -25,8 +25,7 @@ class PostAccess:
         return Post.objects.order_by('-created_at', '-id')
 
     def public_filter(self):
-        # 距離判定を追加するまでは公開設定だけで絞り込む。
-        return Q(is_public=True)
+        return Q(is_public=True, admin_hidden_at__isnull=True)
 
     def finalize_response(self, request, response, *args, **kwargs):
         response = super().finalize_response(request, response, *args, **kwargs)

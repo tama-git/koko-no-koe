@@ -1,0 +1,107 @@
+{% extends 'admin_side/base.html' %}
+
+{% block title %}投稿 #{{ post.pk }} の詳細{% endblock %}
+{% block overview_class %}active{% endblock %}
+
+{% block account_actions %}
+  <form method="post" action="{% url 'admin_side:logout' %}">
+    {% csrf_token %}
+    <button type="submit">ログアウト</button>
+  </form>
+{% endblock %}
+
+{% block content %}
+  <a class="back-link" href="{% url 'admin_side:dashboard' %}{% querystring source=None reason_page=None %}#{{ back_section }}">← {% if back_section == 'reports' %}通報一覧{% else %}投稿一覧{% endif %}に戻る</a>
+  {% for message in messages %}
+    <p class="notice" role="status">{{ message }}</p>
+  {% endfor %}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">POST DETAIL</p>
+      <h1>投稿 #{{ post.pk }} の詳細</h1>
+      <p class="subtitle">投稿日 {{ post.created_at|date:'Y/m/d H:i' }} · {% if post.is_admin_hidden %}管理者により非表示{% elif post.is_public %}公開{% else %}本人のみ公開{% endif %}</p>
+      {% if post.is_admin_hidden %}
+        <p class="subtitle">非表示にした日時 {{ post.admin_hidden_at|date:'Y/m/d H:i' }}{% if post.admin_hidden_by_id %} · 管理者 #{{ post.admin_hidden_by_id }}{% endif %}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <section class="panel detail-panel" aria-labelledby="post-content">
+    <h2 id="post-content">投稿内容</h2>
+    {% if post.is_public or post.is_admin_hidden %}
+      <p class="post-body">{{ post.message|default:'（本文なし）' }}</p>
+      {% if post.image %}
+        <img class="post-photo" src="{% url 'admin_side:post-photo' post.pk %}" alt="投稿に添付された写真">
+      {% endif %}
+    {% else %}
+      <p class="post-body">本人のみ公開の投稿です。</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="report-content">
+    <div class="panel-heading">
+      <div>
+        <h2 id="report-content">通報内容</h2>
+        <p>{{ reports.paginator.count }}件{% if reports.paginator.count %} · {{ post.get_report_status_display|default:'要確認' }}{% endif %}</p>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <caption class="sr-only">この投稿への通報</caption>
+        <thead><tr>
+          <th scope="col">カテゴリ</th>
+          <th scope="col">自由記述</th>
+          <th scope="col">通報日時</th>
+          <th scope="col">通報者</th>
+        </tr></thead>
+        <tbody>
+          {% for report in reports %}
+            <tr>
+              <td>{{ report.get_category_display }}</td>
+              <td class="report-text">{{ report.details|default:'（記述なし）' }}</td>
+              <td>{{ report.created_at|date:'Y/m/d H:i' }}</td>
+              <td>会員 #{{ report.reporter_id }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="empty-state">この投稿への通報はありません。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if reports.has_other_pages %}
+      <nav class="table-footer page-links" aria-label="通報理由のページ">
+        {% if reports.has_previous %}<a class="detail-link" href="{% querystring reason_page=reports.previous_page_number %}#report-content">前へ</a>{% endif %}
+        {{ reports.number }} / {{ reports.paginator.num_pages }}
+        {% if reports.has_next %}<a class="detail-link" href="{% querystring reason_page=reports.next_page_number %}#report-content">次へ</a>{% endif %}
+      </nav>
+    {% endif %}
+  </section>
+  {% if report_id %}
+    <section class="panel detail-panel" aria-labelledby="review-actions">
+      <h2 id="review-actions">通報対応</h2>
+      <form id="post-review-form" class="review-actions" method="post" action="{% url 'admin_side:post-review' post.pk %}{% querystring %}">
+        {% csrf_token %}
+        <input type="hidden" name="expected_state" value="{{ review_state }}">
+        <input type="hidden" name="report_id" value="{{ report_id }}">
+        {% for action, label in review_actions %}
+          <button class="review-button" type="submit" name="action" value="{{ action }}">{{ label }}</button>
+        {% endfor %}
+        {% if post.is_public and not post.is_admin_hidden %}
+          <button class="review-button destructive" type="button" onclick="document.getElementById('hide-confirm').showModal()">管理者として非表示にする</button>
+        {% endif %}
+      </form>
+      {% if post.is_public and not post.is_admin_hidden %}
+        <dialog id="hide-confirm" class="review-dialog" aria-labelledby="hide-title">
+          <h2 id="hide-title">投稿 #{{ post.pk }} を非表示にしますか？</h2>
+          <p>投稿者と管理者だけが見られるようになり、通報は対応済みになります。この非表示は解除できません。</p>
+          <div class="review-actions">
+            <form method="dialog">
+              <button class="review-button" autofocus>キャンセル</button>
+            </form>
+            <button class="review-button destructive" type="submit" form="post-review-form" name="action" value="hide">非表示を確定</button>
+          </div>
+        </dialog>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}

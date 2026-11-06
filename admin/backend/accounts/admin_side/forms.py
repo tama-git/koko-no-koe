@@ -1,5 +1,7 @@
 from django import forms
 from django.contrib.auth import authenticate
+
+from posts.models import Post
 from ..backends import is_admin_account
 
 class AdminLoginForm(forms.Form):
@@ -36,3 +38,9 @@ class AdminLoginForm(forms.Form):
 
     def get_user(self):
         return getattr(self, 'user_cache', None)
+
+
+class PostReviewForm(forms.Form):
+    action = forms.ChoiceField(choices=[*Post.ReportStatus.choices, ('hide', '管理者非表示')])
+    expected_state = forms.ChoiceField(choices=Post.ReportStatus.choices)
+    report_id = forms.IntegerField(min_value=1, max_value=2**63 - 1)

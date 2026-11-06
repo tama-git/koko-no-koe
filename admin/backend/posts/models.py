@@ -59,6 +59,10 @@ class Post(models.Model):
     )
 
     report_status = models.CharField(max_length=12, choices=ReportStatus.choices, null=True, blank=True)
+    admin_hidden_at = models.DateTimeField(null=True, blank=True)
+    admin_hidden_by = models.ForeignKey(
+        'accounts.AdminUser', on_delete=models.SET_NULL, null=True, blank=True, related_name='moderated_posts',
+    )
 
     # 投稿日時
     created_at = models.DateTimeField(
@@ -68,6 +72,10 @@ class Post(models.Model):
 
     class Meta:
         db_table = 'POST'
+
+    @property
+    def is_admin_hidden(self):
+        return self.admin_hidden_at is not None
 
 
 class HiddenPost(models.Model):

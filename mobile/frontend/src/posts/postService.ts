@@ -7,6 +7,7 @@ export type SavedPost = {
   latitude: number | null;
   longitude: number | null;
   is_published: boolean | null;
+  is_admin_hidden?: boolean;
   created_at: string;
   can_report?: boolean;
 };
