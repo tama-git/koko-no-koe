@@ -70,6 +70,18 @@ class Post(models.Model):
         db_table = 'POST'
 
 
+class HiddenPost(models.Model):
+    """
+    非表示テーブル
+    """
+    # 会員IDとの紐付け
+    user_id = models.ForeignKey('accounts.MobileUser', on_delete=models.CASCADE, related_name='hidden_posts') 
+    # 投稿IDとの紐付け
+    post_id = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='hidden_posts')
+
+    class Meta:
+        db_table = 'HIDDEN'
+
 class PostReport(models.Model):
     class Category(models.TextChoices):
         SPAM = 'spam', '迷惑行為・スパム'
