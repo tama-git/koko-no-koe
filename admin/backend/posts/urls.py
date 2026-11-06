@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import PostListCreateAPIView, PublicPostListAPIView, PostDetailAPIView, PostImageAPIView, PostReportAPIView, PostHideAPIView
+from likes.views import PostReactionAPIView
 
 urlpatterns = [
     # モバイルアプリからの通信を受け付けるエンドポイント
@@ -9,4 +10,6 @@ urlpatterns = [
     path('<int:pk>/image/', PostImageAPIView.as_view(), name='post-image'),
     path('<int:pk>/reports/', PostReportAPIView.as_view(), name='post-report'),
     path('<int:pk>/hidden/', PostHideAPIView.as_view(), name='post-hide'),
+    # reactions は likes アプリで管理するが、URLは posts と同じプレフィックス配下に置く
+    path('<int:pk>/reactions/', PostReactionAPIView.as_view(), name='post-reaction'),
 ]

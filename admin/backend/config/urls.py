@@ -14,6 +14,6 @@ urlpatterns = [
     path('mobile/', include('accounts.mobile.urls')),
     path('api/mobile/', include('accounts.mobile.api_urls')),
 
-    # 投稿用のAPIルーティング
+    # 投稿・リアクション用のAPIルーティング
     path('api/posts/', include('posts.urls')),
 ]
