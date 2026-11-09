@@ -9,4 +9,5 @@ urlpatterns = [
     path('login/', api_views.login),                # ログイン → トークン取得
     path('logout/', api_views.logout),              # ログアウト → セッション削除
     path('change-password/', api_views.change_password),  # パスワード変更
+    path('delete-account/', api_views.delete_account),    # 退会
 ]
