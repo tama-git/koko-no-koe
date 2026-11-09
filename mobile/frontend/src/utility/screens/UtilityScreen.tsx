@@ -6,11 +6,12 @@ import { Pressable, StyleSheet, Text, View, Alert } from 'react-native';
 import { AppScreen } from '../../shared/components/AppScreen';
 import { ChangePasswordScreen } from './ChangePasswordScreen';
 import { DeleteAccountScreen } from './DeleteAccountScreen';
+import { HelpScreen } from './HelpScreen';
 
 type Props = { 
   onClose: () => void;
-  onLogout: () => Promise<void>; // App.tsx の handleLogout（トークン削除・ログイン画面に戻る）
-  token?: string; // ログイン中のトークン。パスワード変更など認証が必要な操作に使う
+  onLogout: () => Promise<void>; 
+  token?: string; 
   user?: {
     name: string;
     email: string;
@@ -18,25 +19,36 @@ type Props = {
 };
 
 export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
-  // どのサブ画面を表示するか。'menu' がデフォルト（メニュー一覧）
-  const [screen, setScreen] = useState<'menu' | 'changePassword' | 'deleteAccount'>('menu');
+  // ② screen の選択肢に 'help' を追加
+  const [screen, setScreen] = useState<'menu' | 'changePassword' | 'deleteAccount' | 'help'>('menu');
 
   // パスワード変更画面に切り替え
   if (screen === 'changePassword') {
     return (
       <ChangePasswordScreen
         token={token ?? ''}
-        onClose={() => setScreen('menu')} // 完了・戻るでメニューに戻る
+        onClose={() => setScreen('menu')}
       />
     );
   }
 
+  // 退会画面に切り替え
   if (screen === 'deleteAccount') {
     return (
       <DeleteAccountScreen
         token={token ?? ''}
         onClose={() => setScreen('menu')}
         onDeleted={onLogout}
+      />
+    );
+  }
+
+  // ヘルプ画面に切り替え
+  if (screen === 'help') {
+    return (
+      <HelpScreen
+        token={token ?? ''}
+        onClose={() => setScreen('menu')} // メニューに戻る
       />
     );
   }
@@ -70,27 +82,27 @@ export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
         </View>
 
         <View style={styles.menuContainer}>
-          {/* TODO: アカウント設定画面を実装したら onPress を差し替える */}
-          <Pressable style={styles.menuItem} onPress={() => console.log('プロフィール編集へ')}>
-            <Text style={styles.menuText}>アカウント設定</Text>
-          </Pressable>
-
-          {/* パスワード変更：screen を切り替えてサブ画面を表示 */}
+          {/* パスワード変更 */}
           <Pressable style={styles.menuItem} onPress={() => setScreen('changePassword')}>
             <Text style={styles.menuText}>パスワード変更</Text>
           </Pressable>
 
-          {/* TODO: ヘルプ画面を実装したら onPress を差し替える */}
-          <Pressable style={styles.menuItem} onPress={() => console.log('ヘルプへ')}>
-            <Text style={styles.menuText}>ヘルプ・問い合わせ</Text>
+          {/* ヘルプ */}
+          <Pressable style={styles.menuItem} onPress={() => setScreen('help')}>
+            <Text style={styles.menuText}>ヘルプ</Text>
           </Pressable>
 
-          {/* ログアウト・退会は赤系のスタイルで区別 */}
+          {/* 問い合わせ */}
+          <Pressable style={styles.menuItem} onPress={() => console.log('問い合わせへ')}>
+            <Text style={styles.menuText}>問い合わせ</Text>
+          </Pressable>
+
+          {/* ログアウト */}
           <Pressable style={[styles.menuItem, styles.logoutItem]} onPress={handleLogout}>
             <Text style={styles.logoutText}>ログアウト</Text>
           </Pressable>
 
-          {/* TODO: 退会処理を実装したら onPress を差し替える */}
+          {/* 退会 */}
           <Pressable style={[styles.menuItem, styles.logoutItem]} onPress={() => setScreen('deleteAccount')}>
             <Text style={styles.logoutText}>退会</Text>
           </Pressable>
