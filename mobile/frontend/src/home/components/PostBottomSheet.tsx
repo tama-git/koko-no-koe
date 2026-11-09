@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Pressable,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -13,8 +14,8 @@ import type { SheetLevel } from './bottomSheetGeometry';
 import { PostList } from '../../posts/components/PostList';
 import type { PostListState } from '../../posts/usePostList';
 
-export function PostBottomSheet({ bottomInset = 0, list, onSelectPost }: {
-  bottomInset?: number; list: PostListState; onSelectPost: (id: number) => void;
+export function PostBottomSheet({ bottomInset = 0, list, onSelectPost, onRecenter }: {
+  bottomInset?: number; list: PostListState; onSelectPost: (id: number) => void; onRecenter?: (() => void) | null;
 }) {
   const [screenHeight, setScreenHeight] = useState(0);
 
@@ -74,6 +75,18 @@ export function PostBottomSheet({ bottomInset = 0, list, onSelectPost }: {
         setScreenHeight(event.nativeEvent.layout.height)
       }
     >
+      {onRecenter && (
+        <Animated.View style={[styles.recenterWrap, { bottom: animatedHeight }]} pointerEvents="box-none">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="現在地に戻る"
+            onPress={onRecenter}
+            style={({ pressed }) => [styles.recenterButton, pressed && styles.recenterButtonPressed]}
+          >
+            <Text style={styles.recenterText}>現在地</Text>
+          </Pressable>
+        </Animated.View>
+      )}
       <Animated.View
         style={[styles.sheet, { height: animatedHeight }]}
       >
@@ -126,6 +139,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 10,
   },
+  recenterWrap: { position: 'absolute', right: 12, marginBottom: 12 },
+  recenterButton: { backgroundColor: '#FFFFFF', borderRadius: 22, paddingHorizontal: 16, minHeight: 44, justifyContent: 'center', elevation: 3 },
+  recenterButtonPressed: { opacity: 0.7 },
+  recenterText: { color: '#1D4030', fontSize: 14, fontWeight: '700' },
   handleArea: {
     height: 40,
     alignItems: 'center',

@@ -26,6 +26,7 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
   const [selectedPost, setSelectedPost] = useState<number | null>(null);
   const [ownPostsOpen, setOwnPostsOpen] = useState(false);
   const [utilityOpen, setUtilityOpen] = useState(false);
+  const [recenter, setRecenter] = useState<(() => void) | null>(null);
   const publicPosts = usePostList(token, 'public', refreshKey);
   const refreshPosts = () => setRefreshKey(value => value + 1);
   const closePost = () => {
@@ -38,7 +39,7 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
       <View style={{ flex: 1 }}>
 
         {/* 地図の上に、後から描画するボトムシートを重ねる */}
-        <HomeMap posts={publicPosts.posts} onSelectPost={setSelectedPost} />
+        <HomeMap posts={publicPosts.posts} onSelectPost={setSelectedPost} onRecenterReady={fn => setRecenter(() => fn)} />
         <SafeAreaView pointerEvents="box-none" style={styles.topActions}>
           <View pointerEvents="box-none" style={styles.topActionRow}>
             <Pressable accessibilityRole="button" onPress={() => setOwnPostsOpen(true)} style={styles.topAction}>
@@ -50,7 +51,7 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
           </View>
         </SafeAreaView>
         {/* 投稿一覧のボトムシート */}
-        <PostBottomSheet bottomInset={inputBarHeight} list={publicPosts} onSelectPost={setSelectedPost} />
+        <PostBottomSheet bottomInset={inputBarHeight} list={publicPosts} onSelectPost={setSelectedPost} onRecenter={recenter} />
         <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
           onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
         {composerOpen && <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setComposerOpen(false)} />}
