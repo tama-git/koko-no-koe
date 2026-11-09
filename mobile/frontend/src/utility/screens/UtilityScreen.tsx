@@ -1,12 +1,11 @@
 // ユーティリティメニュー画面。
 // メニュー項目を押すと対応する画面に切り替わる（screen ステートで管理）。
-// 現在実装済み：パスワード変更
-// 未実装（console.log のまま）：アカウント設定・ヘルプ・退会
 
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View, Alert } from 'react-native';
 import { AppScreen } from '../../shared/components/AppScreen';
 import { ChangePasswordScreen } from './ChangePasswordScreen';
+import { DeleteAccountScreen } from './DeleteAccountScreen';
 
 type Props = { 
   onClose: () => void;
@@ -20,7 +19,7 @@ type Props = {
 
 export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
   // どのサブ画面を表示するか。'menu' がデフォルト（メニュー一覧）
-  const [screen, setScreen] = useState<'menu' | 'changePassword'>('menu');
+  const [screen, setScreen] = useState<'menu' | 'changePassword' | 'deleteAccount'>('menu');
 
   // パスワード変更画面に切り替え
   if (screen === 'changePassword') {
@@ -28,6 +27,16 @@ export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
       <ChangePasswordScreen
         token={token ?? ''}
         onClose={() => setScreen('menu')} // 完了・戻るでメニューに戻る
+      />
+    );
+  }
+
+  if (screen === 'deleteAccount') {
+    return (
+      <DeleteAccountScreen
+        token={token ?? ''}
+        onClose={() => setScreen('menu')}
+        onDeleted={onLogout}
       />
     );
   }
@@ -82,7 +91,7 @@ export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
           </Pressable>
 
           {/* TODO: 退会処理を実装したら onPress を差し替える */}
-          <Pressable style={[styles.menuItem, styles.logoutItem]} onPress={() => console.log('退会処理へ')}>
+          <Pressable style={[styles.menuItem, styles.logoutItem]} onPress={() => setScreen('deleteAccount')}>
             <Text style={styles.logoutText}>退会</Text>
           </Pressable>
         </View>

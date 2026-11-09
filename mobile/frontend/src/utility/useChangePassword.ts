@@ -1,5 +1,4 @@
 // パスワード変更画面の状態・バリデーション・送信処理をまとめたカスタムフック。
-// 画面の見た目は ChangePasswordScreen.tsx で管理する。
 
 import { useRef, useState } from 'react';
 import { ApiError } from '../auth/api';

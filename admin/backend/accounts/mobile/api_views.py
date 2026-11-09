@@ -128,6 +128,30 @@ def _session_user(request):
 
 @csrf_exempt
 @require_POST
+def delete_account(request):
+    """退会。パスワードを確認してからユーザーと関連データをすべて削除する。
+    Post.user_id が CASCADE のため、投稿・セッション・リアクション・通報・非表示レコードも連鎖削除される。"""
+    user = _session_user(request)
+    if not user:
+        return error('ログイン状態を確認できません。', 401)
+    try:
+        if request.content_type != 'application/json' or len(request.body) > 4096:
+            return error('送信内容を確認してください。', 400)
+        data = json.loads(request.body)
+        if not isinstance(data, dict) or not isinstance(data.get('password'), str):
+            return error('送信内容を確認してください。', 400)
+    except (ValueError, UnicodeDecodeError):
+        return error('送信内容を確認してください。', 400)
+    # パスワードが一致しない場合は退会させない
+    if not user.check_password(data['password']):
+        return error('パスワードが正しくありません。', 401)
+    with transaction.atomic():
+        user.delete()  # CASCADE で投稿・セッション・リアクション・通報・非表示レコードも削除される
+    return JsonResponse({'message': '退会しました。'})
+
+
+@csrf_exempt
+@require_POST
 def change_password(request):
     """パスワード変更。現在のパスワードを確認してから新しいパスワードに更新する。
     変更後もセッションはそのまま維持する（再ログイン不要）。"""
