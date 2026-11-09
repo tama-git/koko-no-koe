@@ -1,34 +1,44 @@
-import React from 'react';
+// ユーティリティメニュー画面。
+// メニュー項目を押すと対応する画面に切り替わる（screen ステートで管理）。
+// 現在実装済み：パスワード変更
+// 未実装（console.log のまま）：アカウント設定・ヘルプ・退会
+
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View, Alert } from 'react-native';
 import { AppScreen } from '../../shared/components/AppScreen';
-
-// 例: ログイン中のユーザー情報を取得するカスタムフックやコンテキストのインポート
-// import { useAuth } from '../../shared/context/AuthContext'; 
+import { ChangePasswordScreen } from './ChangePasswordScreen';
 
 type Props = { 
   onClose: () => void;
-  // 外部からログイン中のユーザーデータを受け取る場合（不要な場合はコンテキストフック内で取得してください）
+  onLogout: () => Promise<void>; // App.tsx の handleLogout（トークン削除・ログイン画面に戻る）
+  token?: string; // ログイン中のトークン。パスワード変更など認証が必要な操作に使う
   user?: {
     name: string;
     email: string;
   };
 };
 
-export function UtilityScreen({ onClose, user }: Props) {
-  // 例: コンテキストからログインユーザーを取得する場合
-  // const { user, logout } = useAuth();
+export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
+  // どのサブ画面を表示するか。'menu' がデフォルト（メニュー一覧）
+  const [screen, setScreen] = useState<'menu' | 'changePassword'>('menu');
 
-  // ログアウト処理の例
+  // パスワード変更画面に切り替え
+  if (screen === 'changePassword') {
+    return (
+      <ChangePasswordScreen
+        token={token ?? ''}
+        onClose={() => setScreen('menu')} // 完了・戻るでメニューに戻る
+      />
+    );
+  }
+
   const handleLogout = () => {
     Alert.alert('確認', 'ログアウトしますか？', [
       { text: 'キャンセル', style: 'cancel' },
-      { 
-        text: 'ログアウト', 
-        style: 'destructive', 
-        onPress: () => {
-          // 実際のログアウト処理（トークン削除など）
-          // logout();
-        } 
+      {
+        text: 'ログアウト',
+        style: 'destructive',
+        onPress: () => onLogout().then(() => Alert.alert('完了', 'ログアウトしました。')),
       },
     ]);
   };
@@ -41,35 +51,37 @@ export function UtilityScreen({ onClose, user }: Props) {
         </Pressable>
       </View>
 
-      {/* ユーティリティ（メニュー）画面 */}
       <View style={styles.container}>
         <Text style={styles.title}>ユーティリティメニュー</Text>
 
-        {/* ログイン中のユーザー情報を動的に表示 */}
+        {/* ログイン中のメールアドレスを表示 */}
         <View style={styles.userCard}>
           <Text style={styles.userInfoLabel}>ログイン中のアカウント</Text>
           <Text style={styles.userEmail}>{user?.email || 'メールアドレス未設定'}</Text>
         </View>
 
-        {/* メニュー項目のリスト */}
         <View style={styles.menuContainer}>
+          {/* TODO: アカウント設定画面を実装したら onPress を差し替える */}
           <Pressable style={styles.menuItem} onPress={() => console.log('プロフィール編集へ')}>
             <Text style={styles.menuText}>アカウント設定</Text>
           </Pressable>
 
-          <Pressable style={styles.menuItem} onPress={() => console.log('パスワード変更へ')}>
+          {/* パスワード変更：screen を切り替えてサブ画面を表示 */}
+          <Pressable style={styles.menuItem} onPress={() => setScreen('changePassword')}>
             <Text style={styles.menuText}>パスワード変更</Text>
           </Pressable>
 
+          {/* TODO: ヘルプ画面を実装したら onPress を差し替える */}
           <Pressable style={styles.menuItem} onPress={() => console.log('ヘルプへ')}>
             <Text style={styles.menuText}>ヘルプ・問い合わせ</Text>
           </Pressable>
 
-          {/* ログインユーザー向けのアクション */}
+          {/* ログアウト・退会は赤系のスタイルで区別 */}
           <Pressable style={[styles.menuItem, styles.logoutItem]} onPress={handleLogout}>
             <Text style={styles.logoutText}>ログアウト</Text>
           </Pressable>
 
+          {/* TODO: 退会処理を実装したら onPress を差し替える */}
           <Pressable style={[styles.menuItem, styles.logoutItem]} onPress={() => console.log('退会処理へ')}>
             <Text style={styles.logoutText}>退会</Text>
           </Pressable>
