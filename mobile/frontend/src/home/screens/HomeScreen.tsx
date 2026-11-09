@@ -59,7 +59,7 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
           onClose={() => setOwnPostsOpen(false)} onPostDeleted={refreshPosts} onVisibilityChanged={refreshPosts} />}
         {utilityOpen && (
           <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeUtility}>
-            <UtilityScreen onClose={closeUtility} />
+            <UtilityScreen onClose={closeUtility} token={token} onLogout={onLogout} />
           </Modal>
         )}
 
