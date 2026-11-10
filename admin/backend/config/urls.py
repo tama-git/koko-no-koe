@@ -16,4 +16,7 @@ urlpatterns = [
 
     # 投稿・リアクション用のAPIルーティング
     path('api/posts/', include('posts.urls')),
+
+    # 問い合わせ
+    path('api/', include('utility.urls')),
 ]
