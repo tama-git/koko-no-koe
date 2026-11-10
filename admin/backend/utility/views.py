@@ -1,8 +1,10 @@
 from posts.authentication import MobileBearerAuthentication
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, generics
+from django.views.generic import DetailView
+from .serializers import ContactSerializer
 from .models import Contact  # お問い合わせモデルのインポート
 
 class ContactCreateView(APIView):
@@ -44,3 +46,21 @@ class ContactCreateView(APIView):
                 {"error": str(e)}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class ContactAdminListView(generics.ListAPIView):
+    """
+    管理者向け：お問い合わせ一覧取得API
+    """
+    queryset = Contact.objects.all().order_by('-created_at')
+    serializer_class = ContactSerializer
+    # 管理者権限（必要に応じてプロジェクトの管理者用認証クラスに変更可能です）
+    permission_classes = [IsAdminUser]
+
+# utility/views.py の ContactDetailView 部分
+class ContactDetailView(DetailView):
+    """
+    管理者向け：お問い合わせ詳細画面
+    """
+    model = Contact
+    template_name = 'admin_side/contact_detail.html'
+    context_object_name = 'contact'

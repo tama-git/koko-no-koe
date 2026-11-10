@@ -21,7 +21,8 @@
     <span class="environment-label">管理者モード</span>
   </div>
 
-  <section class="stat-grid" aria-label="投稿・通報の件数">
+  <!-- 統計グリッド -->
+  <section class="stat-grid" aria-label="投稿・通報・お問い合わせの件数">
     <article class="stat-card">
       <span class="stat-label">すべての投稿</span>
       <strong>{{ post_page.paginator.count }}<small>件</small></strong>
@@ -37,8 +38,14 @@
       <strong>{{ pending_count }}<small>件</small></strong>
       <p><a class="detail-link" href="{% querystring status='pending' report_page=None %}#reports">要確認の投稿を見る</a></p>
     </article>
+    <article class="stat-card">
+      <span class="stat-label">ユーザーからの問い合わせ</span>
+      <strong id="contact-count">-<small>件</small></strong>
+      <p><a class="detail-link" href="#contacts">問い合わせ一覧を見る</a></p>
+    </article>
   </section>
 
+  <!-- 通報一覧セクション -->
   <section class="panel" id="reports">
     <div class="panel-heading">
       <div>
@@ -101,6 +108,33 @@
     </div>
   </section>
 
+  <!-- お問い合わせ一覧セクション -->
+  <section class="panel" id="contacts">
+    <div class="panel-heading">
+      <div>
+        <h2>お問い合わせ一覧</h2>
+        <p>ユーザーから寄せられたお問い合わせを新しい順に表示しています。</p>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <caption class="sr-only">ユーザーからの問い合わせ一覧</caption>
+        <thead>
+          <tr>
+            <th scope="col">内容</th>
+            <th scope="col">メールアドレス</th>
+            <th scope="col">送信日時</th>
+            <th scope="col"><span class="sr-only">操作</span></th>
+          </tr>
+        </thead>
+        <tbody id="admin-contact-tbody">
+          <tr><td colspan="4" class="empty-state">読み込み中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 投稿一覧セクション -->
   <section class="panel" id="posts">
     <div class="panel-heading">
       <div>
@@ -139,10 +173,69 @@
       {% if post_page.has_other_pages %}
         <nav class="page-links" aria-label="投稿一覧のページ">
           {% if post_page.has_previous %}<a class="detail-link" href="{% querystring post_page=post_page.previous_page_number %}#posts">前へ</a>{% endif %}
-          {{ post_page.number }} / {{ post_page.paginator.num_pages }}
-          {% if post_page.has_next %}<a class="detail-link" href="{% querystring post_page=post_page.next_page_number %}#posts">次へ</a>{% endif %}
+          {{ report_page.number }} / {{ report_page.paginator.num_pages }}
+          {% if report_page.has_next %}<a class="detail-link" href="{% querystring report_page=report_page.next_page_number %}#posts">次へ</a>{% endif %}
         </nav>
       {% endif %}
     </div>
   </section>
+
+  <!-- スクリプト（各行に詳細ページへのリンクを生成するよう修正） -->
+  <script>
+    async function loadAdminContacts() {
+      try {
+        const response = await fetch('/api/admin/contacts/');
+        if (!response.ok) throw new Error('データ取得に失敗しました');
+        
+        const contacts = await response.json();
+        
+        document.getElementById('contact-count').innerHTML = `${contacts.length}<small>件</small>`;
+        
+        const tbody = document.getElementById('admin-contact-tbody');
+        tbody.innerHTML = '';
+
+        if (contacts.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="empty-state">お問い合わせはまだありません。</td></tr>';
+          return;
+        }
+
+        contacts.forEach(c => {
+          const tr = document.createElement('tr');
+          const dateStr = new Date(c.created_at).toLocaleString('ja-JP', {
+            year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+          });
+
+          // 内容の省略処理
+          const messageText = c.message || '';
+          const truncatedMessage = messageText.length > 36 ? messageText.substring(0, 36) + '…' : messageText;
+          const userEmail = c.user_email || c.email || '不明なメールアドレス';
+
+          // 💡 「詳細を見る」をクリックすると別の詳細ページ（/admin/contacts/ID/）に飛ぶようにリンクを設定
+          tr.innerHTML = `
+            <td>
+              <strong class="post-title">${escapeHtml(truncatedMessage)}</strong>
+              <span class="post-author">問い合わせ #${c.id}</span>
+            </td>
+            <td>${escapeHtml(userEmail)}</td>
+            <td>${dateStr}</td>
+            <td><a class="detail-link" href="/api/admin/contacts/${c.id}/">詳細を見る<span class="sr-only">：問い合わせ #${c.id}</span></a></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (error) {
+        console.error(error);
+        document.getElementById('admin-contact-tbody').innerHTML = '<tr><td colspan="4" class="empty-state">お問い合わせの読み込みに失敗しました。</td></tr>';
+        document.getElementById('contact-count').innerHTML = `0<small>件</small>`;
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/[&<>'"]/g, tag => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+      }[tag] || tag));
+    }
+
+    document.addEventListener('DOMContentLoaded', loadAdminContacts);
+  </script>
 {% endblock %}
