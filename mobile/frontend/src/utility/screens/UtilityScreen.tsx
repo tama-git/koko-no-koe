@@ -7,6 +7,7 @@ import { AppScreen } from '../../shared/components/AppScreen';
 import { ChangePasswordScreen } from './ChangePasswordScreen';
 import { DeleteAccountScreen } from './DeleteAccountScreen';
 import { HelpScreen } from './HelpScreen';
+import { ContactScreen } from './ContactScreen'; 
 
 type Props = { 
   onClose: () => void;
@@ -19,9 +20,7 @@ type Props = {
 };
 
 export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
-  // ② screen の選択肢に 'help' を追加
-  const [screen, setScreen] = useState<'menu' | 'changePassword' | 'deleteAccount' | 'help'>('menu');
-
+  const [screen, setScreen] = useState<'menu' | 'changePassword' | 'deleteAccount' | 'help' | 'contact'>('menu');
   // パスワード変更画面に切り替え
   if (screen === 'changePassword') {
     return (
@@ -47,6 +46,16 @@ export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
   if (screen === 'help') {
     return (
       <HelpScreen
+        token={token ?? ''}
+        onClose={() => setScreen('menu')} // メニューに戻る
+      />
+    );
+  }
+
+  // 問い合わせ画面に切り替え
+  if (screen === 'contact') {
+    return (
+      <ContactScreen
         token={token ?? ''}
         onClose={() => setScreen('menu')} // メニューに戻る
       />
@@ -93,7 +102,7 @@ export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
           </Pressable>
 
           {/* 問い合わせ */}
-          <Pressable style={styles.menuItem} onPress={() => console.log('問い合わせへ')}>
+          <Pressable style={styles.menuItem} onPress={() => setScreen('contact')}>
             <Text style={styles.menuText}>問い合わせ</Text>
           </Pressable>
 

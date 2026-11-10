@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     "accounts",
     "posts",
     "likes",
+    "utility",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
