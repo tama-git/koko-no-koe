@@ -1,0 +1,37 @@
+{% extends 'admin_side/base.html' %}
+
+{% block title %}お問い合わせ #{{ contact.id }} の詳細{% endblock %}
+
+{% block overview_class %}active{% endblock %}
+
+{% block account_actions %}
+  <form method="post" action="{% url 'admin_side:logout' %}">
+    {% csrf_token %}
+    <button type="submit">ログアウト</button>
+  </form>
+{% endblock %}
+
+{% block content %}
+  <!-- 一番上にお問い合わせ一覧に戻るリンクを配置 -->
+  <a class="back-link" href="/dashboard/#contacts">← お問い合わせ一覧に戻る</a>
+
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">CONTACT DETAIL</p>
+      <h1>お問い合わせ #{{ contact.id }} の詳細</h1>
+      <p class="subtitle">送信日時 {{ contact.created_at|date:'Y/m/d H:i' }}</p>
+    </div>
+  </div>
+
+  <!-- 送信者情報のパネル -->
+  <section class="panel detail-panel" aria-labelledby="sender-heading">
+    <h2 id="sender-heading">送信者 (メールアドレス)</h2>
+    <p class="post-body">{{ contact.user.email|default:contact.email }}</p>
+  </section>
+
+  <!-- お問い合わせ内容のパネル -->
+  <section class="panel detail-panel" aria-labelledby="message-heading">
+    <h2 id="message-heading">お問い合わせ内容</h2>
+    <p class="post-body" style="white-space: pre-wrap; word-break: break-all;">{{ contact.message }}</p>
+  </section>
+{% endblock %}
