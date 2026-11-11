@@ -1,0 +1,60 @@
+{% extends 'admin_side/base.html' %}
+{% block title %}投稿一覧{% endblock %}
+{% block content %}
+  <section class="panel" id="posts">
+    <div class="panel-heading">
+      <div>
+        <h1>投稿一覧</h1>
+        <p>投稿を新しい順に表示しています。</p>
+      </div>
+    </div>
+    {% include 'admin_side/list_controls.html' with section='posts' search_hint='公開本文・投稿ID・会員ID' date_label='投稿日' list_route='admin_side:posts' %}
+    {% for message in messages %}<p class="list-filter-error" role="status">{{ message }}</p>{% endfor %}
+    <div class="table-scroll">
+      <table>
+        <caption class="sr-only">登録された投稿</caption>
+        <thead><tr>
+          <th scope="col">投稿</th>
+          <th scope="col">投稿日時</th>
+          <th scope="col">投稿者</th>
+          <th scope="col">公開状態</th>
+          <th scope="col"><span class="sr-only">操作</span></th>
+        </tr></thead>
+        <tbody>
+          {% for post in post_page %}
+            <tr>
+              <td>
+                <strong class="post-title">{% if post.is_public %}{{ post.message|default:'写真の投稿'|truncatechars:36 }}{% else %}本人のみ公開の投稿{% endif %}</strong>
+                <span class="post-author">投稿 #{{ post.pk }}</span>
+              </td>
+              <td>{{ post.created_at|date:'Y/m/d H:i' }}</td>
+              <td>会員 #{{ post.user_id_id }}</td>
+              <td>{% if post.is_admin_hidden %}<span class="status private">管理者により非表示</span>{% elif post.is_public %}<span class="status reviewed">公開</span>{% else %}<span class="status private">本人のみ公開</span>{% endif %}</td>
+              <td>
+                <a class="detail-link" href="{% url 'admin_side:post-detail' post.pk %}{% querystring source='posts' %}">詳細を見る<span class="sr-only">：投稿 #{{ post.pk }}</span></a>
+                {% if post.is_public and not post.is_admin_hidden %}
+                  <form class="quick-action" method="post" action="{% url 'admin_side:post-hide' post.pk %}{% querystring %}" onsubmit="return confirm('この投稿を管理者非表示にしますか？ この操作は元に戻せません。');">
+                    {% csrf_token %}
+                    <button type="submit">非表示にする</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="empty-state">該当する投稿はありません。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="table-footer">
+      {{ post_page.paginator.count }}件
+      {% if post_page.has_other_pages %}
+        <nav class="page-links" aria-label="投稿一覧のページ">
+          {% if post_page.has_previous %}<a class="detail-link" href="{% querystring post_page=post_page.previous_page_number %}#posts">前へ</a>{% endif %}
+          {{ post_page.number }} / {{ post_page.paginator.num_pages }}
+          {% if post_page.has_next %}<a class="detail-link" href="{% querystring post_page=post_page.next_page_number %}#posts">次へ</a>{% endif %}
+        </nav>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

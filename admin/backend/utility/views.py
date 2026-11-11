@@ -4,6 +4,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics
 from django.views.generic import DetailView
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
+from accounts.admin_side.views import admin_required
 from .serializers import ContactSerializer
 from .models import Contact  # お問い合わせモデルのインポート
 
@@ -57,6 +60,7 @@ class ContactAdminListView(generics.ListAPIView):
     permission_classes = [IsAdminUser]
 
 # utility/views.py の ContactDetailView 部分
+@method_decorator([never_cache, admin_required], name='dispatch')
 class ContactDetailView(DetailView):
     """
     管理者向け：お問い合わせ詳細画面

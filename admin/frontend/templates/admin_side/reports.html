@@ -1,0 +1,66 @@
+{% extends 'admin_side/base.html' %}
+{% block title %}通報一覧{% endblock %}
+{% block content %}
+  <section class="panel" id="reports">
+    <div class="panel-heading">
+      <div>
+        <h1>通報一覧</h1>
+        <p>同じ投稿への通報をまとめ、最後に通報された順に表示しています。</p>
+      </div>
+    </div>
+    {% include 'admin_side/list_controls.html' with section='reports' search_hint='公開本文・投稿ID・会員ID' date_label='最終通報日' list_route='admin_side:reports' %}
+
+    <nav class="filter-tabs" aria-label="状態で絞り込み">
+      {% for value, label, count in filters %}
+        <a href="{% querystring status=value report_page=None %}#reports"{% if active_filter == value %} class="selected" aria-current="page"{% endif %}>{{ label }} <span>{{ count }}</span></a>
+      {% endfor %}
+    </nav>
+
+    <div class="table-scroll">
+      <table>
+        <caption class="sr-only">通報された投稿</caption>
+        <thead>
+          <tr>
+            <th scope="col">対象の投稿</th>
+            <th scope="col">通報件数・最終通報</th>
+            <th scope="col">状態</th>
+            <th scope="col"><span class="sr-only">操作</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for post in report_page %}
+          <tr>
+            <td>
+              <strong class="post-title">{% if post.is_public %}{{ post.message|default:'写真の投稿'|truncatechars:36 }}{% else %}本人のみ公開の投稿{% endif %}</strong>
+              <span class="post-author">投稿 #{{ post.pk }} · 投稿者 会員 #{{ post.user_id_id }}</span>
+            </td>
+            <td class="reason">{{ post.report_count }}件<span class="post-author">{{ post.last_report_at|date:'Y/m/d H:i' }}</span></td>
+            <td>
+              <span class="status {{ post.review_state }}">{{ post.get_report_status_display|default:'要確認' }}</span>
+              {% if post.is_admin_hidden %}<span class="post-author">管理者により非表示</span>{% endif %}
+            </td>
+            <td>
+              <a class="detail-link" href="{% url 'admin_side:post-detail' post.pk %}{% querystring source='reports' %}">通報を確認 <span aria-hidden="true">↗</span><span class="sr-only">：投稿 #{{ post.pk }}</span></a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" class="empty-state">該当する通報はありません。</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-footer">
+      {{ report_page.paginator.count }}件
+      {% if report_page.has_other_pages %}
+        <nav class="page-links" aria-label="通報一覧のページ">
+          {% if report_page.has_previous %}<a class="detail-link" href="{% querystring report_page=report_page.previous_page_number %}#reports">前へ</a>{% endif %}
+          {{ report_page.number }} / {{ report_page.paginator.num_pages }}
+          {% if report_page.has_next %}<a class="detail-link" href="{% querystring report_page=report_page.next_page_number %}#reports">次へ</a>{% endif %}
+        </nav>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

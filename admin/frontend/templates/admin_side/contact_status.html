@@ -1,0 +1,14 @@
+{% if contact.is_resolved %}
+  <span class="status resolved">対応済み</span>
+{% else %}
+  <span class="status pending">未対応</span>
+{% endif %}
+<form class="review-actions" method="post" action="{% url 'admin_side:contact-status' contact.pk %}{% querystring %}">
+  {% csrf_token %}
+  {% if from_list %}<input type="hidden" name="return_to" value="list">{% endif %}
+  {% if contact.is_resolved %}
+    <button type="submit" name="status" value="pending">未対応に戻す</button>
+  {% else %}
+    <button type="submit" name="status" value="resolved">対応済みにする</button>
+  {% endif %}
+</form>

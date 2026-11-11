@@ -1,0 +1,47 @@
+{% extends 'admin_side/base.html' %}
+{% block title %}お問い合わせ一覧{% endblock %}
+{% block content %}
+  <section class="panel" id="contacts">
+    <div class="panel-heading">
+      <div>
+        <h1>お問い合わせ一覧</h1>
+        <p>ユーザーから寄せられたお問い合わせを新しい順に表示しています。</p>
+      </div>
+    </div>
+    {% include 'admin_side/list_controls.html' with section='contacts' search_hint='本文・メールアドレス' date_label='送信日' list_route='admin_side:contacts' %}
+    <div class="table-scroll">
+      <table>
+        <caption class="sr-only">ユーザーからの問い合わせ一覧</caption>
+        <thead>
+          <tr>
+            <th scope="col">内容</th>
+            <th scope="col">メールアドレス</th>
+            <th scope="col">送信日時</th>
+            <th scope="col">対応状況</th>
+            <th scope="col"><span class="sr-only">操作</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for contact in contact_page %}
+          <tr>
+            <td>{{ contact.message|truncatechars:36 }}</td>
+            <td>{{ contact.user.email|default:contact.email }}</td>
+            <td>{{ contact.created_at|date:'Y/m/d H:i' }}</td>
+            <td>{% include 'admin_side/contact_status.html' with from_list=True %}</td>
+            <td><a class="detail-link" href="{% url 'contact-admin-detail' contact.pk %}{% querystring %}">詳細を見る</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="empty-state">該当するお問い合わせはありません。</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% if contact_page.has_other_pages %}
+    <nav class="page-links" aria-label="お問い合わせ一覧のページ">
+      {% if contact_page.has_previous %}<a href="{% querystring page=contact_page.previous_page_number %}">前へ</a>{% endif %}
+      {{ contact_page.number }} / {{ contact_page.paginator.num_pages }}
+      {% if contact_page.has_next %}<a href="{% querystring page=contact_page.next_page_number %}">次へ</a>{% endif %}
+    </nav>
+  {% endif %}
+{% endblock %}

@@ -11,7 +11,7 @@
 {% endblock %}
 
 {% block content %}
-  <a class="back-link" href="{% url 'admin_side:dashboard' %}{% querystring source=None reason_page=None %}#{{ back_section }}">← {% if back_section == 'reports' %}通報一覧{% else %}投稿一覧{% endif %}に戻る</a>
+  <a class="back-link" href="{% url back_route %}{% querystring source=None reason_page=None %}">← {% if back_route == 'admin_side:reports' %}通報一覧{% else %}投稿一覧{% endif %}に戻る</a>
   {% for message in messages %}
     <p class="notice" role="status">{{ message }}</p>
   {% endfor %}

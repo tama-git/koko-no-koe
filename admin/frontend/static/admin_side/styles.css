@@ -74,6 +74,13 @@ dd { margin: 5px 0 0; font-size: 13px; }
 .empty-state { color: var(--muted); text-align: center; }
 .panel + .panel { margin-top: 24px; }
 .filter-tabs { flex-wrap: wrap; }
+.list-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 0 26px 16px; }
+.list-controls label { display: grid; gap: 4px; font-size: 13px; }
+.list-controls input, .list-controls select { min-height: 36px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: white; color: inherit; font: inherit; }
+.list-controls button { min-height: 36px; }
+.list-controls .detail-link { align-self: center; }
+.list-filter-error { padding: 0 26px; }
+.quick-action { margin-top: 8px; }
 .status.resolved { color: #4c6481; background: #edf2f8; }
 .status.private { color: #586660; background: #edf0ee; }
 .page-links { display: flex; align-items: center; gap: 14px; }

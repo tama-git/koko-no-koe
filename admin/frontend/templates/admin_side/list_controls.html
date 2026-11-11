@@ -1,0 +1,38 @@
+<form class="list-controls" method="get">
+  <label>キーワード
+    <input type="search" name="q" value="{{ keyword }}" maxlength="200" placeholder="{{ search_hint }}">
+  </label>
+  {% if section == 'posts' %}
+    <label>公開状態
+      <select name="visibility">
+        <option value="">すべて</option>
+        <option value="public"{% if visibility == 'public' %} selected{% endif %}>公開</option>
+        <option value="private"{% if visibility == 'private' %} selected{% endif %}>本人のみ公開</option>
+        <option value="hidden"{% if visibility == 'hidden' %} selected{% endif %}>管理者により非表示</option>
+      </select>
+    </label>
+  {% elif section == 'contacts' %}
+    <label>対応状況
+      <select name="status">
+        <option value="">すべて</option>
+        <option value="pending"{% if contact_status == 'pending' %} selected{% endif %}>未対応</option>
+        <option value="resolved"{% if contact_status == 'resolved' %} selected{% endif %}>対応済み</option>
+      </select>
+    </label>
+  {% else %}
+    <input type="hidden" name="status" value="{{ active_filter }}">
+  {% endif %}
+  <label>{{ date_label }}
+    <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+  </label>
+  <label>表示件数
+    <select name="size">
+      {% for size in page_sizes %}
+        <option value="{{ size }}"{% if size == page_size %} selected{% endif %}>{{ size }}件</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">適用</button>
+  <a class="detail-link" href="{% url list_route %}">条件をクリア</a>
+</form>
+{% if date_error %}<p class="list-filter-error" role="alert">日付を選び直してください。</p>{% endif %}

@@ -13,7 +13,7 @@
 
 {% block content %}
   <!-- 一番上にお問い合わせ一覧に戻るリンクを配置 -->
-  <a class="back-link" href="/dashboard/#contacts">← お問い合わせ一覧に戻る</a>
+  <a class="back-link" href="{% url 'admin_side:contacts' %}{% querystring %}">← お問い合わせ一覧に戻る</a>
 
   <div class="page-heading">
     <div>
@@ -22,6 +22,11 @@
       <p class="subtitle">送信日時 {{ contact.created_at|date:'Y/m/d H:i' }}</p>
     </div>
   </div>
+
+  <section class="panel detail-panel" aria-labelledby="contact-status-heading">
+    <h2 id="contact-status-heading">対応状況</h2>
+    {% include 'admin_side/contact_status.html' %}
+  </section>
 
   <!-- 送信者情報のパネル -->
   <section class="panel detail-panel" aria-labelledby="sender-heading">
