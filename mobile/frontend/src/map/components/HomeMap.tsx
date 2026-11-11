@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import type { Region } from 'react-native-maps';
 import Svg, { Defs, Mask, Rect, Circle } from 'react-native-svg';
-import { useCurrentLocation } from '../../location/useCurrentLocation';
+import type { LocationState } from '../../location/useCurrentLocation';
 import type { SavedPost } from '../../posts/postService';
-import { filterNearbyPosts } from '../filterNearbyPosts';
+import { distanceMeters, RADIUS_METERS } from '../filterNearbyPosts';
 
 // Phase 1の仮設定。現在地ではなく、日本全体を見渡すための初期範囲。
 const INITIAL_JAPAN_REGION: Region = {
@@ -16,15 +16,17 @@ const INITIAL_JAPAN_REGION: Region = {
 };
 
 /** トップ画面の地図。iPhoneの既定プロバイダー（Apple Maps）を使う。 */
-export function HomeMap({ posts, onSelectPost, onRecenterReady }: {
+export function HomeMap({ posts, nearbyPostIds, location, onSelectPost, onShowDistance, onRecenterReady }: {
   posts: readonly SavedPost[];
+  nearbyPostIds: ReadonlySet<number>;
+  location: LocationState;
   onSelectPost: (id: number) => void;
+  onShowDistance: (distance: number | null) => void;
   onRecenterReady?: (recenter: () => void) => void;
 }) {
   const map = useRef<MapView>(null);
   const [mapReady, setMapReady] = useState(false);
   const centered = useRef(false);
-  const location = useCurrentLocation();
 
   // 現在地の画面上のピクセル座標
   const [circleCenter, setCircleCenter] = useState<{ x: number; y: number } | null>(null);
@@ -43,7 +45,7 @@ export function HomeMap({ posts, onSelectPost, onRecenterReady }: {
       });
       setCircleCenter({ x: point.x, y: point.y });
       const edgePoint = await map.current.pointForCoordinate({
-        latitude: location.coordinates.latitude + (250 / 111320),
+        latitude: location.coordinates.latitude + (RADIUS_METERS / 111320),
         longitude: location.coordinates.longitude,
       });
       setRadiusPx(Math.abs(point.y - edgePoint.y));
@@ -82,10 +84,20 @@ export function HomeMap({ posts, onSelectPost, onRecenterReady }: {
     onRecenterReady?.(handleRecenter);
   }, [handleRecenter, onRecenterReady]);
 
-  // 現在地が取れている場合は250m以内に絞り込む。取れていない間は全件表示。
-  const visiblePosts = location.status === 'ready'
-    ? filterNearbyPosts(posts, location.coordinates.latitude, location.coordinates.longitude)
-    : posts;
+  const selectMarker = (id: number, latitude: number, longitude: number) => {
+    if (location.status !== 'ready') {
+      onShowDistance(null);
+      return;
+    }
+    if (nearbyPostIds.has(id)) {
+      onSelectPost(id);
+      return;
+    }
+    const distance = distanceMeters(
+      location.coordinates.latitude, location.coordinates.longitude, latitude, longitude,
+    );
+    onShowDistance(distance);
+  };
 
   const message = location.status === 'loading' ? '現在地を取得しています…'
     : location.status === 'denied' ? '位置情報が許可されていません。地図はそのまま利用できます。許可する場合はiPhoneの設定をご確認ください。'
@@ -111,11 +123,12 @@ export function HomeMap({ posts, onSelectPost, onRecenterReady }: {
         showsUserLocation={location.status === 'ready'}
         showsMyLocationButton={false}
       >
-        {visiblePosts.map(({ id, latitude, longitude, is_published }) => {
+        {posts.map(({ id, latitude, longitude, is_published }) => {
           if (is_published !== true || latitude === null || longitude === null) return null;
           return (
-            <Marker key={id} coordinate={{ latitude, longitude }} pinColor="#B43A37"
-              title="投稿を見る" onPress={() => onSelectPost(id)} />
+            <Marker key={id} coordinate={{ latitude, longitude }}
+              pinColor={nearbyPostIds.has(id) ? '#B43A37' : '#446C9A'}
+              onPress={() => selectMarker(id, latitude, longitude)} />
           );
         })}
       </MapView>

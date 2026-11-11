@@ -45,7 +45,14 @@ async function request(path: 'register' | 'login' | 'logout', body: object, toke
     return result;
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new ApiError('サーバーに接続できません。通信環境と接続先を確認してください。');
+    const message = controller.signal.aborted
+      ? 'サーバーへの接続が時間切れになりました。'
+      : 'サーバーに接続できません。通信環境と接続先を確認してください。';
+    // 開発時は実際に読み込まれた接続先を表示する。認証情報は含めない。
+    const destination = typeof __DEV__ !== 'undefined' && __DEV__
+      ? `\n接続先: ${baseUrl}/api/mobile/${path}/`
+      : '';
+    throw new ApiError(message + destination);
   } finally {
     clearTimeout(timeout);
   }
