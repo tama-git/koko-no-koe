@@ -22,6 +22,9 @@
       <a class="nav-item {% block overview_class %}{% endblock %}" href="{% url 'admin_side:dashboard' %}">
         <span aria-hidden="true">▦</span> インデックス
       </a>
+      <a class="nav-item" href="{% url 'admin_side:posts' %}">投稿一覧</a>
+      <a class="nav-item" href="{% url 'admin_side:reports' %}">通報一覧</a>
+      <a class="nav-item" href="{% url 'admin_side:contacts' %}">お問い合わせ一覧</a>
     </nav>
     <div class="sidebar-footer">
       <span class="connection-dot"></span> ローカル環境<small>管理者モード</small>
@@ -31,7 +34,12 @@
   <div class="workspace">
     <header class="topbar">
       <span>ここの声 / 管理者</span>
-      {% block account_actions %}{% endblock %}
+      {% block account_actions %}
+        <form method="post" action="{% url 'admin_side:logout' %}">
+          {% csrf_token %}
+          <button type="submit">ログアウト</button>
+        </form>
+      {% endblock %}
       <span class="preview-pill">SYSTEM <span>管理画面</span></span>
     </header>
     <main id="main-content">

@@ -5,6 +5,8 @@ import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppScreen } from '../../shared/components/AppScreen';
 
+const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '') ?? '';
+
 type Props = {
   token: string;       // ログイン中のトークン（HomeScreen → UtilityScreen 経由で渡される）
   onClose: () => void; // 戻るボタン・送信完了後に呼ぶ
@@ -15,12 +17,14 @@ export function ContactScreen({ token, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 開発環境のDjangoサーバーへの送信URL
-  const API_URL = 'http://10.250.4.0:8000/api/contacts/';
-
   const handleSubmit = async () => {
     if (!messageText.trim()) {
       setError('お問い合わせ内容を入力してください。');
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(apiBaseUrl)) {
+      setError('サーバーの接続先が設定されていません。');
       return;
     }
 
@@ -36,7 +40,7 @@ export function ContactScreen({ token, onClose }: Props) {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch(API_URL, {
+      const response = await fetch(`${apiBaseUrl}/api/contacts/`, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({
@@ -44,18 +48,19 @@ export function ContactScreen({ token, onClose }: Props) {
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
 
-      if (response.ok) {
+      if (response.status === 201 && Number.isInteger(data?.id)) {
         Alert.alert('完了', 'お問い合わせを送信しました。', [
           { text: 'OK', onPress: onClose }
         ]);
         setMessageText('');
       } else {
-        setError(data.error || '送信に失敗しました。時間をおいて再度お試しください。');
+        setError(typeof data?.error === 'string' && response.status < 500
+          ? data.error
+          : `送信結果を確認できませんでした（HTTP ${response.status}）。`);
       }
-    } catch (err) {
-      console.error('通信エラー:', err);
+    } catch {
       setError('サーバーに接続できませんでした。');
     } finally {
       setBusy(false);

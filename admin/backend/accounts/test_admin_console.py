@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from posts.models import Post, PostReport
+from utility.models import Contact
 from .models import AdminUser, MobileUser
 
 
@@ -34,16 +35,14 @@ class AdminConsoleTests(TestCase):
     def sign_in(self):
         self.client.force_login(self.admin, backend='accounts.backends.AdminEmailBackend')
 
-    def test_dashboard_groups_reports_and_filters_without_changing_post_list(self):
+    def test_report_list_groups_reports_and_filters(self):
         self.sign_in()
-        response = self.client.get(reverse('admin_side:dashboard'), {'status': 'pending'})
+        response = self.client.get(reverse('admin_side:reports'), {'status': 'pending'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['reported_count'], 2)
         self.assertEqual(response.context['pending_count'], 1)
         self.assertEqual([(post.pk, post.report_count) for post in response.context['report_page']], [(self.pending.pk, 2)])
-        self.assertEqual([post.pk for post in response.context['post_page']], [self.private.pk, self.reviewed.pk, self.pending.pk])
-        self.assertContains(response, '本人のみ公開の投稿')
-        self.assertNotContains(response, self.private.message)
+        self.assertNotContains(response, 'id="posts"')
         self.assertIsNone(Post.objects.get(pk=self.pending.pk).report_status)
 
     def test_detail_shows_each_report_and_preserves_filter_on_back_link(self):
@@ -57,25 +56,97 @@ class AdminConsoleTests(TestCase):
         self.assertNotContains(response, '<script>test</script>')
         self.assertContains(response, '会員 #' + str(self.reporter.pk))
         self.assertNotContains(response, self.reporter.email)
-        self.assertContains(response, '/dashboard/?status=pending#reports')
+        self.assertContains(response, '/dashboard/reports/?status=pending')
         self.assertIn('no-store', response['Cache-Control'])
 
         private = self.client.get(reverse('admin_side:post-detail', args=[self.private.pk]))
         self.assertContains(private, '本人のみ公開')
         self.assertNotContains(private, self.private.message)
 
-    def test_dashboard_paginates_posts_with_the_report_filter_preserved(self):
+    def test_post_list_paginates_posts_and_preserves_private_content(self):
         self.sign_in()
         Post.objects.bulk_create([
             Post(user_id=self.reporter, message=f'追加投稿 {index}', is_public=True)
             for index in range(20)
         ])
-        response = self.client.get(reverse('admin_side:dashboard'), {'status': 'reviewed'})
+        response = self.client.get(reverse('admin_side:posts'))
         self.assertEqual(len(response.context['post_page']), 20)
-        self.assertContains(response, '?status=reviewed&amp;post_page=2#posts')
-        second = self.client.get(reverse('admin_side:dashboard'), {'status': 'reviewed', 'post_page': '2'})
+        self.assertContains(response, '?post_page=2#posts')
+        second = self.client.get(reverse('admin_side:posts'), {'post_page': '2'})
         self.assertEqual(len(second.context['post_page']), 3)
-        self.assertEqual([post.pk for post in second.context['report_page']], [self.reviewed.pk])
+        self.assertNotContains(response, self.private.message)
+        self.assertNotContains(second, self.private.message)
+
+    def test_overview_links_to_separate_sections_and_contacts_require_admin(self):
+        contact = Contact.objects.create(user=self.reporter, email=self.reporter.email, message='確認用のお問い合わせ')
+        sections = [reverse(f'admin_side:{name}') for name in ('posts', 'reports', 'contacts')]
+        detail = reverse('contact-admin-detail', args=[contact.pk])
+        for url in (*sections, detail):
+            self.assertRedirects(self.client.get(url), f'/login/?next={url}')
+        self.sign_in()
+        overview = self.client.get(reverse('admin_side:dashboard'))
+        for url in sections:
+            self.assertContains(overview, f'href="{url}"')
+        self.assertNotContains(overview, contact.message)
+        self.assertContains(self.client.get(sections[-1]), contact.message)
+        self.assertContains(self.client.get(detail), f'href="{sections[-1]}"')
+
+    def test_contact_status_can_be_changed_only_by_admin_post_with_csrf(self):
+        contact = Contact.objects.create(user=self.reporter, email=self.reporter.email, message='確認用')
+        url = reverse('admin_side:contact-status', args=[contact.pk])
+        detail = reverse('contact-admin-detail', args=[contact.pk])
+        listing = reverse('admin_side:contacts')
+        self.assertRedirects(self.client.post(url, {'status': 'resolved'}), f'/login/?next={url}')
+        contact.refresh_from_db()
+        self.assertFalse(contact.is_resolved)
+
+        self.sign_in()
+        self.assertContains(self.client.get(listing), '対応済みにする')
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.assertEqual(self.client.post(url, {'status': 'invalid'}).status_code, 400)
+        self.assertRedirects(self.client.post(url, {'status': 'resolved'}), detail)
+        contact.refresh_from_db()
+        self.assertTrue(contact.is_resolved)
+        self.assertContains(self.client.get(detail), '未対応に戻す')
+
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.admin, backend='accounts.backends.AdminEmailBackend')
+        self.assertEqual(csrf_client.post(url, {'status': 'pending'}).status_code, 403)
+        csrf_client.get(listing)
+        csrf = csrf_client.cookies['csrftoken'].value
+        self.assertRedirects(csrf_client.post(f'{url}?page=1', {
+            'status': 'pending', 'return_to': 'list', 'csrfmiddlewaretoken': csrf,
+        }), f'{listing}?page=1')
+        contact.refresh_from_db()
+        self.assertFalse(contact.is_resolved)
+
+    def test_list_filters_and_quick_hide_preserve_visibility_rules(self):
+        self.sign_in()
+        listing = reverse('admin_side:posts')
+        reports = reverse('admin_side:reports')
+        date = timezone.localdate().isoformat()
+        response = self.client.get(listing, {'q': '通報対象', 'date': date, 'visibility': 'public', 'size': 10})
+        self.assertEqual([post.pk for post in response.context['post_page']], [self.pending.pk])
+        self.assertEqual(response.context['post_page'].paginator.per_page, 10)
+        self.assertContains(response, f'会員 #{self.pending.user_id_id}')
+        self.assertEqual(self.client.get(listing, {'q': self.private.message}).context['post_page'].paginator.count, 0)
+        self.assertEqual(self.client.get(listing, {'q': str(self.private.user_id_id)}).context['post_page'].paginator.count, 3)
+        self.assertEqual(self.client.get(reports, {'q': '通報対象', 'date': date}).context['report_page'].paginator.count, 1)
+        Contact.objects.create(user=self.reporter, email=self.reporter.email, message='確認用', is_resolved=True)
+        contacts = self.client.get(reverse('admin_side:contacts'), {'status': 'resolved', 'q': '確認', 'date': date})
+        self.assertEqual(contacts.context['contact_page'].paginator.count, 1)
+
+        hide = reverse('admin_side:post-hide', args=[self.pending.pk])
+        self.assertEqual(self.client.get(hide).status_code, 405)
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.admin, backend='accounts.backends.AdminEmailBackend')
+        self.assertEqual(csrf_client.post(hide).status_code, 403)
+        self.assertRedirects(self.client.post(f'{hide}?visibility=public'), f'{listing}?visibility=public')
+        self.pending.refresh_from_db()
+        self.assertEqual(self.pending.admin_hidden_by_id, self.admin.pk)
+        self.assertTrue(self.pending.is_admin_hidden)
+        self.assertEqual(self.pending.reports.count(), 2)
+        self.assertEqual(self.client.get(listing, {'visibility': 'hidden'}).context['post_page'].paginator.count, 1)
 
     def test_admin_session_is_required_for_details_and_photos(self):
         detail = reverse('admin_side:post-detail', args=[self.pending.pk])

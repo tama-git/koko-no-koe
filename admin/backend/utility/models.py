@@ -15,6 +15,7 @@ class Contact(models.Model):
     email = models.EmailField(verbose_name='メールアドレス')
     message = models.TextField(verbose_name='お問い合わせ内容')
     created_at = models.DateTimeField(verbose_name='送信日時', auto_now_add=True)
+    is_resolved = models.BooleanField(verbose_name='対応済み', default=False)
 
     class Meta:
         db_table = 'CONTACT'
