@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '../../shared/components/AppScreen';
 import { HomeMap } from '../../map/components/HomeMap';
+import { useCurrentLocation } from '../../location/useCurrentLocation';
+import { filterNearbyPosts } from '../../map/filterNearbyPosts';
 import { PostBottomSheet } from '../components/PostBottomSheet';
 import { MessageInputBar } from '../components/MessageInputBar';
 import { PostComposerModal } from '../../posts/components/PostComposerModal';
@@ -24,10 +26,21 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
   const [inputBarHeight, setInputBarHeight] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedPost, setSelectedPost] = useState<number | null>(null);
+  const [selectedDistance, setSelectedDistance] = useState<{ meters: number | null } | null>(null);
   const [ownPostsOpen, setOwnPostsOpen] = useState(false);
   const [utilityOpen, setUtilityOpen] = useState(false);
   const [recenter, setRecenter] = useState<(() => void) | null>(null);
   const publicPosts = usePostList(token, 'public', refreshKey);
+  const location = useCurrentLocation();
+  const nearbyPosts = location.status === 'ready'
+    ? filterNearbyPosts(publicPosts.posts, location.coordinates.latitude, location.coordinates.longitude)
+    : [];
+  const nearbyList = {
+    ...publicPosts,
+    posts: nearbyPosts,
+    loading: publicPosts.loading || location.status === 'loading',
+  };
+  const registerRecenter = useCallback((fn: () => void) => setRecenter(() => fn), []);
   const refreshPosts = () => setRefreshKey(value => value + 1);
   const closePost = () => {
     setSelectedPost(null);
@@ -39,7 +52,9 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
       <View style={{ flex: 1 }}>
 
         {/* 地図の上に、後から描画するボトムシートを重ねる */}
-        <HomeMap posts={publicPosts.posts} onSelectPost={setSelectedPost} onRecenterReady={fn => setRecenter(() => fn)} />
+        <HomeMap posts={publicPosts.posts} nearbyPostIds={new Set(nearbyPosts.map(post => post.id))}
+          location={location} onSelectPost={setSelectedPost}
+          onShowDistance={meters => setSelectedDistance({ meters })} onRecenterReady={registerRecenter} />
         <SafeAreaView pointerEvents="box-none" style={styles.topActions}>
           <View pointerEvents="box-none" style={styles.topActionRow}>
             <Pressable accessibilityRole="button" onPress={() => setOwnPostsOpen(true)} style={styles.topAction}>
@@ -51,11 +66,14 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
           </View>
         </SafeAreaView>
         {/* 投稿一覧のボトムシート */}
-        <PostBottomSheet bottomInset={inputBarHeight} list={publicPosts} onSelectPost={setSelectedPost} onRecenter={recenter} />
+        <PostBottomSheet bottomInset={inputBarHeight} list={nearbyList} onSelectPost={setSelectedPost} onRecenter={recenter} />
         <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
           onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
         {composerOpen && <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setComposerOpen(false)} />}
         {selectedPost !== null && <PostDetailModal postId={selectedPost} token={token} onClose={closePost} onHidden={closePost} />}
+        {selectedDistance !== null && (
+          <PostDetailModal distanceMeters={selectedDistance.meters} onClose={() => setSelectedDistance(null)} />
+        )}
         {ownPostsOpen && <OwnPostsModal token={token} refreshKey={refreshKey}
           onClose={() => setOwnPostsOpen(false)} onPostDeleted={refreshPosts} onVisibilityChanged={refreshPosts} />}
         {utilityOpen && (

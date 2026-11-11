@@ -1,13 +1,13 @@
 // 現在地から半径250m以内の投稿だけを返すフィルター。
-// HomeMap.tsx から呼び出す。
+// 一覧の絞り込みと地図の距離表示で距離計算を共有する。
 
 import type { SavedPost } from '../posts/postService';
 
-const RADIUS_METERS = 250;
+export const RADIUS_METERS = 250;
 
 // Haversine公式で2点間の距離（メートル）を計算する。
 // 地球を球体として近似するため、数十km以内の短距離では十分な精度がある。
-function distanceMeters(
+export function distanceMeters(
   lat1: number, lon1: number,
   lat2: number, lon2: number,
 ): number {
@@ -18,7 +18,7 @@ function distanceMeters(
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * 2 * Math.asin(Math.sqrt(Math.min(1, a)));
 }
 
 // 現在地から RADIUS_METERS 以内の投稿だけを返す。
@@ -29,7 +29,7 @@ export function filterNearbyPosts(
   currentLon: number,
 ): SavedPost[] {
   return posts.filter(post => {
-    if (post.latitude === null || post.longitude === null) return false;
+    if (post.is_published !== true || post.latitude === null || post.longitude === null) return false;
     return distanceMeters(currentLat, currentLon, post.latitude, post.longitude) <= RADIUS_METERS;
   });
 }
