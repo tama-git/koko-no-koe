@@ -18,10 +18,11 @@ type Props = {
   busy: boolean;
   message: string;
   onLogout: () => Promise<void>;
+  user: { name: string; email: string };
 };
 
 /** トップ画面担当の編集場所。ログアウトの処理は認証担当に渡す。 */
-export function HomeScreen({ token, busy, message, onLogout }: Props) {
+export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [inputBarHeight, setInputBarHeight] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -78,7 +79,13 @@ export function HomeScreen({ token, busy, message, onLogout }: Props) {
           onClose={() => setOwnPostsOpen(false)} onPostDeleted={refreshPosts} onVisibilityChanged={refreshPosts} />}
         {utilityOpen && (
           <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeUtility}>
-            <UtilityScreen onClose={closeUtility} token={token} onLogout={onLogout} />
+            <UtilityScreen 
+              onClose={closeUtility} 
+              token={token} 
+              onLogout={onLogout} 
+              // ↓ ここにログイン中のユーザー情報を渡す追加をします
+              user={user}
+            />
           </Modal>
         )}
 
