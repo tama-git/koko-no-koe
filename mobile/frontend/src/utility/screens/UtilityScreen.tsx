@@ -13,10 +13,7 @@ type Props = {
   onClose: () => void;
   onLogout: () => Promise<void>; 
   token?: string; 
-  user?: {
-    name: string;
-    email: string;
-  };
+  user: { name: string; email: string };
 };
 
 export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
