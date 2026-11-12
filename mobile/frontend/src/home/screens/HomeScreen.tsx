@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Animated, Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
 import { AppScreen } from '../../shared/components/AppScreen';
 import { HomeMap } from '../../map/components/HomeMap';
@@ -25,23 +25,24 @@ type Props = {
 export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [inputBarHeight, setInputBarHeight] = useState(0);
+  const sheetHeight = useRef(new Animated.Value(0)).current;
+  const mapBottom = useMemo(() => Animated.add(sheetHeight, inputBarHeight), [sheetHeight, inputBarHeight]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedPost, setSelectedPost] = useState<number | null>(null);
   const [selectedDistance, setSelectedDistance] = useState<{ meters: number | null } | null>(null);
   const [ownPostsOpen, setOwnPostsOpen] = useState(false);
   const [utilityOpen, setUtilityOpen] = useState(false);
-  const [recenter, setRecenter] = useState<(() => void) | null>(null);
   const publicPosts = usePostList(token, 'public', refreshKey);
-  const location = useCurrentLocation();
-  const nearbyPosts = location.status === 'ready'
+  const { location, heading } = useCurrentLocation();
+  const nearbyPosts = useMemo(() => location.status === 'ready'
     ? filterNearbyPosts(publicPosts.posts, location.coordinates.latitude, location.coordinates.longitude)
-    : [];
+    : [], [location, publicPosts.posts]);
+  const nearbyPostIds = useMemo(() => new Set(nearbyPosts.map(post => post.id)), [nearbyPosts]);
   const nearbyList = {
     ...publicPosts,
     posts: nearbyPosts,
     loading: publicPosts.loading || location.status === 'loading',
   };
-  const registerRecenter = useCallback((fn: () => void) => setRecenter(() => fn), []);
   const refreshPosts = () => setRefreshKey(value => value + 1);
   const closePost = () => {
     setSelectedPost(null);
@@ -52,10 +53,12 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
     <AppScreen edgeToEdge>
       <View style={{ flex: 1 }}>
 
-        {/* 地図の上に、後から描画するボトムシートを重ねる */}
-        <HomeMap posts={publicPosts.posts} nearbyPostIds={new Set(nearbyPosts.map(post => post.id))}
-          location={location} onSelectPost={setSelectedPost}
-          onShowDistance={meters => setSelectedDistance({ meters })} onRecenterReady={registerRecenter} />
+        {/* 地図の下端とシートの上端をそろえ、WebView内のボタンをシートに追従させる。 */}
+        <Animated.View style={[styles.mapArea, { bottom: mapBottom }]}>
+          <HomeMap posts={publicPosts.posts} postsLoading={publicPosts.loading} nearbyPostIds={nearbyPostIds}
+            location={location} heading={heading} onSelectPost={setSelectedPost}
+            onShowDistance={meters => setSelectedDistance({ meters })} />
+        </Animated.View>
         <SafeAreaView pointerEvents="box-none" style={styles.topActions}>
           <View pointerEvents="box-none" style={styles.topActionRow}>
             <Pressable accessibilityRole="button" onPress={() => setOwnPostsOpen(true)} style={styles.topAction}>
@@ -67,7 +70,8 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
           </View>
         </SafeAreaView>
         {/* 投稿一覧のボトムシート */}
-        <PostBottomSheet bottomInset={inputBarHeight} list={nearbyList} onSelectPost={setSelectedPost} onRecenter={recenter} />
+        <PostBottomSheet bottomInset={inputBarHeight} animatedHeight={sheetHeight}
+          list={nearbyList} onSelectPost={setSelectedPost} />
         <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
           onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
         {composerOpen && <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setComposerOpen(false)} />}
@@ -95,6 +99,7 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
 }
 
 const styles = StyleSheet.create({
+  mapArea: { position: 'absolute', top: 0, left: 0, right: 0, minHeight: 80 },
   topActions: { position: 'absolute', top: 0, left: 0, right: 72 },
   topActionRow: { flexDirection: 'row', gap: 8, marginLeft: 12, marginVertical: 12 },
   topAction: { flexShrink: 1, paddingHorizontal: 12, minHeight: 44, justifyContent: 'center', borderRadius: 22, backgroundColor: '#FFFFFF', elevation: 3 },
