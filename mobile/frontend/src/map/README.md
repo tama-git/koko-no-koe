@@ -1,4 +1,15 @@
-# 地図機能の担当場所（Phase 2）
+# 地図機能の担当場所
+
+トップ画面では `components/HomeMap.tsx` が WebView を開き、`openFreeMapDocument.ts` の MapLibre GL JS で OpenFreeMap の背景地図を表示します。投稿詳細の小さな地図は `components/PostLocationMap.tsx` が担当します。
+
+- OpenFreeMapのLibertyをもとに、店舗アイコンと店舗名を省きます。駅と主要施設は広い縮尺から、道や歩道とデータにある駅入口は拡大時に表示します。
+- 現在地、ピン、一覧は同じ位置情報から更新されます。赤いピンは250m以内で投稿詳細、青いピンは範囲外で直線距離を開きます。
+- 地図の表示範囲は最初の位置取得時と「現在地」ボタンで移動します。歩行中は現在地の点と円が動き、表示範囲は手で操作できます。
+- WebViewには描画に必要な座標・ピンID・圏内判定だけを渡します。背景地図の読み込みにはインターネット接続が必要です。
+
+試すには `mobile/frontend` で `npm.cmd install` を実行し、`npx.cmd expo start --go --lan --clear` で起動してください。Djangoも通常どおり起動します。Expo Goの位置情報を「アプリの使用中」に許可し、屋外で同じ投稿に近づくと、青いピンが赤に変わり、シートの「近くで読める声」の件数が増えることを確認できます。
+
+## Apple Maps使用時の記録
 
 実際の地図は `components/HomeMap.tsx` です。トップ画面の `../home/screens/HomeScreen.tsx` が地図と既存の `PostBottomSheet` を同じ領域に重ねます。地図のために別画面へ移動しません。
 
