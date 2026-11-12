@@ -1,177 +1,218 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
-import type { Region } from 'react-native-maps';
-import Svg, { Defs, Mask, Rect, Circle } from 'react-native-svg';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Linking, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { WebView } from 'react-native-webview';
+import type { WebViewMessageEvent } from 'react-native-webview';
+
 import type { LocationState } from '../../location/useCurrentLocation';
 import type { SavedPost } from '../../posts/postService';
-import { distanceMeters, RADIUS_METERS } from '../filterNearbyPosts';
+import { distanceMeters } from '../filterNearbyPosts';
+import { createOpenFreeMapDocument } from '../openFreeMapDocument';
+import type { MapPoint, MapSnapshot } from '../openFreeMapDocument';
 
-// Phase 1の仮設定。現在地ではなく、日本全体を見渡すための初期範囲。
-const INITIAL_JAPAN_REGION: Region = {
-  latitude: 36,
-  longitude: 138,
-  latitudeDelta: 36,
-  longitudeDelta: 36,
-};
+const overlayMessages = {
+  position: '地図に現在地の点を表示できませんでした。',
+  range: '地図に250mの範囲を表示できませんでした。',
+  pins: '地図に投稿ピンを表示できませんでした。',
+} as const;
 
-/** トップ画面の地図。iPhoneの既定プロバイダー（Apple Maps）を使う。 */
-export function HomeMap({ posts, nearbyPostIds, location, onSelectPost, onShowDistance, onRecenterReady }: {
+type OverlayIssue = keyof typeof overlayMessages;
+
+function readOverlayIssue(issue: unknown): OverlayIssue | null {
+  return issue === 'position' || issue === 'range' || issue === 'pins' ? issue : null;
+}
+
+function makeMapDocument(snapshot: MapSnapshot, json: string) {
+  return { source: { html: createOpenFreeMapDocument(snapshot) }, json, point: snapshot.current };
+}
+const POSITION_NOTICE_DISTANCE_METERS = 25;
+const POSITION_NOTICE_DELAY_MS = 12000;
+const creditUrls = new Set([
+  'https://openfreemap.org/',
+  'https://www.openmaptiles.org/',
+  'https://www.openstreetmap.org/copyright',
+]);
+
+export function HomeMap({ posts, postsLoading, nearbyPostIds, location, heading, onSelectPost, onShowDistance }: {
   posts: readonly SavedPost[];
+  postsLoading: boolean;
   nearbyPostIds: ReadonlySet<number>;
   location: LocationState;
+  heading: number | null;
   onSelectPost: (id: number) => void;
   onShowDistance: (distance: number | null) => void;
-  onRecenterReady?: (recenter: () => void) => void;
 }) {
-  const map = useRef<MapView>(null);
-  const [mapReady, setMapReady] = useState(false);
-  const centered = useRef(false);
+  const webView = useRef<WebView>(null);
+  const [mapState, setMapState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [overlayIssue, setOverlayIssue] = useState<OverlayIssue | null>(null);
+  const [appliedPoint, setAppliedPoint] = useState<MapPoint | null>(null);
+  const [showPositionNotice, setShowPositionNotice] = useState(false);
+  const [document, setDocument] = useState<ReturnType<typeof makeMapDocument> | null>(null);
+  const [headingWaitElapsed, setHeadingWaitElapsed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const appliedJson = useRef<string | null>(null);
+  const requestId = useRef(0);
+  const pending = useRef<{ id: number; json: string; point: MapPoint | null } | null>(null);
+  const coordinates = location.status === 'ready' ? location.coordinates : null;
+  const latitude = coordinates?.latitude ?? null;
+  const longitude = coordinates?.longitude ?? null;
+  const pins = useMemo(() => posts.flatMap(({ id, latitude, longitude, is_published }) =>
+    is_published === true && latitude !== null && longitude !== null
+      ? [{ id, latitude, longitude, nearby: nearbyPostIds.has(id) }]
+      : []
+  ), [posts, nearbyPostIds]);
 
-  // 現在地の画面上のピクセル座標
-  const [circleCenter, setCircleCenter] = useState<{ x: number; y: number } | null>(null);
-  // SVGオーバーレイのサイズ
-  const [layout, setLayout] = useState<{ width: number; height: number } | null>(null);
-  // 250mが何ピクセルに相当するか
-  const [radiusPx, setRadiusPx] = useState<number>(0);
+  // 地図へは座標・ピンID・圏内フラグだけを渡す。
+  const snapshot: MapSnapshot = useMemo(() => ({
+    current: latitude !== null && longitude !== null ? { latitude, longitude, heading } : null,
+    pins,
+  }), [latitude, longitude, heading, pins]);
+  const snapshotJson = JSON.stringify(snapshot);
+  const positionNeedsUpdate = mapState === 'ready' && coordinates !== null &&
+    (appliedPoint === null || distanceMeters(
+      coordinates.latitude, coordinates.longitude, appliedPoint.latitude, appliedPoint.longitude,
+    ) >= POSITION_NOTICE_DISTANCE_METERS);
 
-  // 現在地のピクセル座標と半径を再計算する（地図移動時・現在地取得時・地図準備完了時に呼ぶ）
-  const updateCircle = useCallback(async () => {
-    if (location.status !== 'ready' || !map.current || !layout) return;
+  useEffect(() => {
+    if (!positionNeedsUpdate) {
+      setShowPositionNotice(false);
+      return;
+    }
+    // 方角や細かな測位の変化が続いても、案内までの時間は座標のずれだけで判定する。
+    const timer = setTimeout(() => setShowPositionNotice(true), POSITION_NOTICE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [positionNeedsUpdate]);
+
+  useEffect(() => {
+    if (document || location.status !== 'ready' || heading !== null) return;
+    const timer = setTimeout(() => setHeadingWaitElapsed(true), 1000);
+    return () => clearTimeout(timer);
+  }, [document, location.status, heading]);
+
+  useEffect(() => {
+    if (document || postsLoading || location.status === 'loading') return;
+    // 初回の方角が間に合えば、地図を開いた時点から矢印を表示する。
+    if (location.status === 'ready' && heading === null && !headingWaitElapsed) return;
+    setDocument(makeMapDocument(snapshot, snapshotJson));
+  }, [document, postsLoading, location.status, heading, headingWaitElapsed, snapshot, snapshotJson]);
+
+  useEffect(() => {
+    if (mapState !== 'ready' || !document || snapshotJson === appliedJson.current) return;
+    const id = ++requestId.current;
+    pending.current = { id, json: snapshotJson, point: snapshot.current };
+    const command = `{"type":"snapshot","requestId":${id},"snapshot":${snapshotJson}}`;
+    webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${command}); true;`);
+    const retry = setTimeout(() => {
+      if (pending.current?.id === id) webView.current?.postMessage(command);
+    }, 1000);
+    return () => {
+      clearTimeout(retry);
+      if (pending.current?.id === id) pending.current = null;
+    };
+  }, [mapState, document, snapshotJson, snapshot.current]);
+
+  const reloadMap = useCallback(() => {
+    pending.current = null;
+    appliedJson.current = null;
+    setMapState('loading');
+    setOverlayIssue(null);
+    setAppliedPoint(null);
+    setShowPositionNotice(false);
+    setDocument(makeMapDocument(snapshot, snapshotJson));
+    setReloadKey(key => key + 1);
+  }, [snapshot, snapshotJson]);
+
+  // 初期HTMLや外部スクリプトが読み込めない場合も、再試行できるようにする。
+  useEffect(() => {
+    if (mapState !== 'loading' || !document) return;
+    const timer = setTimeout(() => setMapState('error'), 25000);
+    return () => clearTimeout(timer);
+  }, [mapState, document, reloadKey]);
+
+  const onMapMessage = ({ nativeEvent }: WebViewMessageEvent) => {
+    if (nativeEvent.data.length > 1024) return;
+    let message: { type?: unknown; id?: unknown; url?: unknown; issue?: unknown; requestId?: unknown } | null;
     try {
-      const point = await map.current.pointForCoordinate({
-        latitude: location.coordinates.latitude,
-        longitude: location.coordinates.longitude,
-      });
-      setCircleCenter({ x: point.x, y: point.y });
-      const edgePoint = await map.current.pointForCoordinate({
-        latitude: location.coordinates.latitude + (RADIUS_METERS / 111320),
-        longitude: location.coordinates.longitude,
-      });
-      setRadiusPx(Math.abs(point.y - edgePoint.y));
+      message = JSON.parse(nativeEvent.data);
     } catch {
-      // 地図の準備ができていない場合は無視
-    }
-  }, [location, layout]);
-
-  // 現在地取得直後・地図準備完了時に丸を即時表示する
-  useEffect(() => {
-    if (!mapReady || location.status !== 'ready') return;
-    void updateCircle();
-    if (centered.current || !map.current) return;
-    centered.current = true;
-    map.current.animateToRegion({
-      latitude: location.coordinates.latitude,
-      longitude: location.coordinates.longitude,
-      latitudeDelta: 0.02,
-      longitudeDelta: 0.02,
-    }, 600);
-  }, [mapReady, location, updateCircle]);
-
-  // 現在地に戻るボタンを押したときの処理
-  const handleRecenter = useCallback(() => {
-    if (location.status !== 'ready' || !map.current) return;
-    map.current.animateToRegion({
-      latitude: location.coordinates.latitude,
-      longitude: location.coordinates.longitude,
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01,
-    }, 600);
-  }, [location]);
-
-  // 現在地に戻る関数を親コンポーネントに渡す
-  useEffect(() => {
-    onRecenterReady?.(handleRecenter);
-  }, [handleRecenter, onRecenterReady]);
-
-  const selectMarker = (id: number, latitude: number, longitude: number) => {
-    if (location.status !== 'ready') {
-      onShowDistance(null);
       return;
     }
-    if (nearbyPostIds.has(id)) {
-      onSelectPost(id);
-      return;
+    if (!message || typeof message !== 'object') return;
+    if (message.type === 'ready') {
+      const issue = readOverlayIssue(message.issue);
+      appliedJson.current = document?.json ?? null;
+      setAppliedPoint(issue === 'position' || issue === 'range' ? null : document?.point ?? null);
+      setOverlayIssue(issue);
+      setMapState('ready');
+    } else if (message.type === 'map-error') {
+      setMapState('error');
+    } else if (message.type === 'recenter-failed') {
+      reloadMap();
+    } else if (message.type === 'overlay-applied' || message.type === 'overlay-error') {
+      const currentRequest = pending.current;
+      if (!currentRequest || message.requestId !== currentRequest.id) return;
+      pending.current = null;
+      if (message.type === 'overlay-applied') {
+        appliedJson.current = currentRequest.json;
+        setOverlayIssue(null);
+      }
+      if (message.type === 'overlay-applied' || message.issue === 'pins') {
+        const next = currentRequest.point;
+        setAppliedPoint(previous =>
+          previous?.latitude === next?.latitude && previous?.longitude === next?.longitude ? previous : next);
+      }
+    } else if (message.type === 'credit' && typeof message.url === 'string' && creditUrls.has(message.url)) {
+      void Linking.openURL(message.url).catch(() => {});
+    } else if (message.type === 'pin' && Number.isSafeInteger(message.id)) {
+      const pin = pins.find(pin => pin.id === message.id);
+      if (!pin) return;
+      if (!coordinates) onShowDistance(null);
+      else if (pin.nearby) onSelectPost(pin.id);
+      else onShowDistance(distanceMeters(coordinates.latitude, coordinates.longitude, pin.latitude, pin.longitude));
     }
-    const distance = distanceMeters(
-      location.coordinates.latitude, location.coordinates.longitude, latitude, longitude,
-    );
-    onShowDistance(distance);
   };
 
-  const message = location.status === 'loading' ? '現在地を取得しています…'
-    : location.status === 'denied' ? '位置情報が許可されていません。地図はそのまま利用できます。許可する場合はiPhoneの設定をご確認ください。'
-    : location.status === 'disabled' ? '端末の位置情報がオフです。地図はそのまま利用できます。'
-    : location.status === 'timeout' ? '現在地の取得に時間がかかっています。地図はそのまま利用できます。再取得する場合は画面を開き直してください。'
-    : location.status === 'error' ? '現在地を取得できませんでした。地図はそのまま利用できます。'
+  const locationMessage = location.status === 'denied' ? '位置情報が許可されていません。許可する場合はiPhoneの設定をご確認ください。'
+    : location.status === 'disabled' ? '端末の位置情報がオフです。'
+    : location.status === 'timeout' ? '現在地の取得に時間がかかっています。'
+    : location.status === 'error' ? '現在地を取得できませんでした。'
     : '';
+  const positionNotice = positionNeedsUpdate && showPositionNotice;
+  const canRetryMap = mapState === 'error' || overlayIssue !== null || positionNotice;
+  const notice = !document ? '地図の表示を準備中…'
+    : mapState === 'error' ? '地図を読み込めませんでした。'
+    : mapState === 'loading' ? '地図を読み込み中…'
+    : overlayIssue ? overlayMessages[overlayIssue]
+    : positionNotice ? '地図の現在地を更新できます。'
+    : locationMessage;
 
   return (
-    <View
-      style={StyleSheet.absoluteFill}
-      onLayout={e => setLayout({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
-    >
-      <MapView
-        ref={map}
-        style={StyleSheet.absoluteFill}
-        initialRegion={INITIAL_JAPAN_REGION}
-        onMapReady={() => setMapReady(true)}
-        onRegionChange={() => { void updateCircle(); }}
-        onRegionChangeComplete={() => { void updateCircle(); }}
-        scrollEnabled
-        zoomEnabled
-        showsUserLocation={location.status === 'ready'}
-        showsMyLocationButton={false}
-      >
-        {posts.map(({ id, latitude, longitude, is_published }) => {
-          if (is_published !== true || latitude === null || longitude === null) return null;
-          return (
-            <Marker key={id} coordinate={{ latitude, longitude }}
-              pinColor={nearbyPostIds.has(id) ? '#B43A37' : '#446C9A'}
-              onPress={() => selectMarker(id, latitude, longitude)} />
-          );
-        })}
-      </MapView>
-
-      {/* 地図の上にSVGオーバーレイを重ねる。現在地が取れていて座標計算済みの場合のみ表示。 */}
-      {location.status === 'ready' && circleCenter && layout && radiusPx > 0 && (
-        <Svg
-          style={StyleSheet.absoluteFill}
-          width={layout.width}
-          height={layout.height}
-          pointerEvents="none"
-        >
-          <Defs>
-            {/* マスク：白=表示、黒=非表示。全体を白にして円を黒にすることで円の中が透明になる */}
-            <Mask id="hole">
-              <Rect width={layout.width} height={layout.height} fill="white" />
-              <Circle cx={circleCenter.x} cy={circleCenter.y} r={radiusPx} fill="black" />
-            </Mask>
-          </Defs>
-          {/* マスクを適用した半透明オーバーレイ。円の部分だけ穴が開く。 */}
-          <Rect
-            width={layout.width}
-            height={layout.height}
-            fill="#000000"
-            fillOpacity={0.3}
-            mask="url(#hole)"
-          />
-          {/* 円の境界線 */}
-          <Circle
-            cx={circleCenter.x}
-            cy={circleCenter.y}
-            r={radiusPx}
-            fill="none"
-            stroke="#000000"
-            strokeWidth={2}
-          />
-        </Svg>
-      )}
-
-      {message ? (
+    <View style={StyleSheet.absoluteFill}>
+      {document && <WebView
+        key={reloadKey}
+        source={document.source}
+        style={styles.map}
+        originWhitelist={['*']}
+        onShouldStartLoadWithRequest={request => request.url === 'about:blank'}
+        onMessage={onMapMessage}
+        onError={() => setMapState('error')}
+        onContentProcessDidTerminate={() => setMapState('error')}
+        scrollEnabled={false}
+        bounces={false}
+        geolocationEnabled={false}
+        allowFileAccess={false}
+        setSupportMultipleWindows={false}
+      />}
+      {notice ? (
         <SafeAreaView pointerEvents="box-none" style={styles.noticeArea}>
-          <View pointerEvents="none" style={styles.notice}>
-            <Text accessibilityLiveRegion="polite" style={styles.noticeText}>{message}</Text>
+          <View style={styles.notice}>
+            <Text accessibilityLiveRegion="polite" style={styles.noticeText}>
+              {notice}
+            </Text>
+            {canRetryMap && (
+              <Pressable accessibilityRole="button" style={styles.retry} onPress={reloadMap}>
+                <Text style={styles.retryText}>{positionNotice && !overlayIssue ? '地図の位置を更新' : '地図を再読み込み'}</Text>
+              </Pressable>
+            )}
           </View>
         </SafeAreaView>
       ) : null}
@@ -180,11 +221,10 @@ export function HomeMap({ posts, nearbyPostIds, location, onSelectPost, onShowDi
 }
 
 const styles = StyleSheet.create({
-  noticeArea: { position: 'absolute', top: 0, left: 0, right: 64 },
-  notice: { margin: 12, marginTop: 64, padding: 12, borderRadius: 10, backgroundColor: '#FFFFFFEE' },
+  map: { flex: 1, backgroundColor: '#EDF0EC' },
+  noticeArea: { position: 'absolute', top: 0, left: 0, right: 0 },
+  notice: { margin: 12, marginTop: 100, padding: 12, borderRadius: 10, backgroundColor: '#FFFFFFEE' },
   noticeText: { fontSize: 13, lineHeight: 20, color: '#1D4030' },
-  recenterArea: { position: 'absolute', bottom: 100, right: 12 },
-  recenterButton: { backgroundColor: '#FFFFFF', borderRadius: 22, paddingHorizontal: 16, minHeight: 44, justifyContent: 'center', elevation: 3 },
-  recenterButtonPressed: { opacity: 0.7 },
-  recenterText: { color: '#1D4030', fontSize: 14, fontWeight: '700' },
+  retry: { minHeight: 44, justifyContent: 'center' },
+  retryText: { fontWeight: '700', color: '#2C6049' },
 });

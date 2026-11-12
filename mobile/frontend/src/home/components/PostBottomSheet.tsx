@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Pressable,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -14,12 +13,11 @@ import type { SheetLevel } from './bottomSheetGeometry';
 import { PostList } from '../../posts/components/PostList';
 import type { PostListState } from '../../posts/usePostList';
 
-export function PostBottomSheet({ bottomInset = 0, list, onSelectPost, onRecenter }: {
-  bottomInset?: number; list: PostListState; onSelectPost: (id: number) => void; onRecenter?: (() => void) | null;
+export function PostBottomSheet({ bottomInset = 0, animatedHeight, list, onSelectPost }: {
+  bottomInset?: number; animatedHeight: Animated.Value; list: PostListState; onSelectPost: (id: number) => void;
 }) {
   const [screenHeight, setScreenHeight] = useState(0);
 
-  const animatedHeight = useRef(new Animated.Value(0)).current;
   const touchStartY = useRef(0);
   const dragStartHeight = useRef(0);
   const currentHeight = useRef(0);
@@ -75,18 +73,6 @@ export function PostBottomSheet({ bottomInset = 0, list, onSelectPost, onRecente
         setScreenHeight(event.nativeEvent.layout.height)
       }
     >
-      {onRecenter && (
-        <Animated.View style={[styles.recenterWrap, { bottom: animatedHeight }]} pointerEvents="box-none">
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="現在地に戻る"
-            onPress={onRecenter}
-            style={({ pressed }) => [styles.recenterButton, pressed && styles.recenterButtonPressed]}
-          >
-            <Text style={styles.recenterText}>現在地</Text>
-          </Pressable>
-        </Animated.View>
-      )}
       <Animated.View
         style={[styles.sheet, { height: animatedHeight }]}
       >
@@ -113,7 +99,7 @@ export function PostBottomSheet({ bottomInset = 0, list, onSelectPost, onRecente
             <View style={styles.handle} />
           </View>
 
-          <Text style={styles.title}>公開投稿</Text>
+          <Text style={styles.title}>近くで読める声 {list.posts.length}件</Text>
           <PostList scope="public" list={list} onSelectPost={onSelectPost} />
         </SafeAreaView>
       </Animated.View>
@@ -139,10 +125,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 10,
   },
-  recenterWrap: { position: 'absolute', right: 12, marginBottom: 12 },
-  recenterButton: { backgroundColor: '#FFFFFF', borderRadius: 22, paddingHorizontal: 16, minHeight: 44, justifyContent: 'center', elevation: 3 },
-  recenterButtonPressed: { opacity: 0.7 },
-  recenterText: { color: '#1D4030', fontSize: 14, fontWeight: '700' },
   handleArea: {
     height: 40,
     alignItems: 'center',
