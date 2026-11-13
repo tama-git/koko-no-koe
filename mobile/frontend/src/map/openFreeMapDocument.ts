@@ -1,8 +1,10 @@
+import type { DisplayPosition } from '../location/displayPosition';
 import { RADIUS_METERS } from './filterNearbyPosts';
 
 export type MapPoint = { latitude: number; longitude: number };
 export type MapSnapshot = {
-  current: (MapPoint & { heading?: number | null }) | null;
+  current: MapPoint | null;
+  displayPosition: DisplayPosition | null;
   pins: (MapPoint & { id: number; nearby: boolean })[];
 };
 
@@ -20,36 +22,22 @@ export const openFreeMapDocument = `<!doctype html>
   <style>
     html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #edf0ec; }
     #range { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-    #credits { position: absolute; z-index: 2; bottom: 8px; left: 8px; max-width: calc(100% - 108px);
-      background: #fffc; color: #334039; border-radius: 4px; padding: 3px 5px; font: 10px system-ui; }
-    #credits a { color: inherit; }
-    #recenter { position: absolute; z-index: 2; bottom: 8px; right: 12px;
-      min-height: 44px; padding: 0 16px; border: 0; border-radius: 22px;
-      background: #fff; color: #1d4030; font: 700 14px system-ui;
-      box-shadow: 0 2px 8px #0002; touch-action: manipulation; }
-    #recenter:active { background: #e9f0eb; }
-    .current-dot { width: 14px; height: 14px; border: 2px solid white; border-radius: 50%;
-      background: #147df1; box-shadow: 0 0 0 2px #147df14a; }
-    .current-direction { position: absolute; left: 50%; top: -14px; transform: translateX(-50%);
-      width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent;
-      border-bottom: 12px solid #147df1; filter: drop-shadow(0 -1px 1px #fff); pointer-events: none; }
+    .current-dot { width: 18px; height: 18px; }
+    .current-bearing { position: absolute; inset: 0; pointer-events: none; }
+    .current-cone { position: absolute; left: 50%; top: 50%; margin: -56px 0 0 -56px;
+      width: 112px; height: 112px; transition: transform 160ms cubic-bezier(.22, .61, .36, 1); }
+    .current-dot::after { content: ''; position: absolute; inset: 0; border: 2px solid white;
+      border-radius: 50%; background: #147df1; box-shadow: 0 0 0 2px #147df14a; }
   </style>
 </head>
 <body>
 <div id="map"></div>
 <canvas id="range" aria-hidden="true"></canvas>
-<button id="recenter" type="button" aria-label="現在地に戻る" hidden>現在地</button>
-<div id="credits">
-  <a href="https://openfreemap.org/">OpenFreeMap</a> ·
-  <a href="https://www.openmaptiles.org/">© OpenMapTiles</a> ·
-  <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>
-</div>
 <script type="application/json" id="initial-map-snapshot">null</script>
 <script>
   const send = message => window.ReactNativeWebView?.postMessage(JSON.stringify(message));
   const mapElement = document.getElementById('map');
   const mask = document.getElementById('range');
-  const recenterButton = document.getElementById('recenter');
   const context = mask.getContext('2d');
   const radius = ${RADIUS_METERS};
   const radians = Math.PI / 180;
@@ -59,8 +47,14 @@ export const openFreeMapDocument = `<!doctype html>
   let ready = false;
   let latestRequestId = 0;
   let current = null;
+  let displayedPosition = null;
+  let markerTarget = null;
+  let positionFrame = null;
   let currentMarker;
-  let currentDirection;
+  let bearingLayer;
+  let cone;
+  let headingAngle = Number.isFinite(initial?.heading) ? initial.heading : null;
+  let latestHeadingRequestId = 0;
   let centered = false;
 
   function walkingStyle(style) {
@@ -108,8 +102,9 @@ export const openFreeMapDocument = `<!doctype html>
     if (!current) return;
 
     // 円周上の座標を地球上の距離で求めて投影し、ズーム・画面移動に追従させる。
-    const lat = current.latitude * radians;
-    const lon = current.longitude + 360 * Math.round((map.getCenter().lng - current.longitude) / 360);
+    const { latitude, longitude } = current;
+    const lat = latitude * radians;
+    const lon = longitude + 360 * Math.round((map.getCenter().lng - longitude) / 360);
     const angular = radius / 6371000;
     const ring = Array.from({ length: 64 }, (_, index) => {
       const bearing = index * 2 * Math.PI / 64;
@@ -175,44 +170,111 @@ export const openFreeMapDocument = `<!doctype html>
     }
   }
 
-  function recenterMap() {
-    if (current) map.flyTo({ center: [current.longitude, current.latitude], zoom: 16, duration: 750 });
+  function recenterMap(bottomInset = 0) {
+    if (!current) return;
+    // シートに隠れる領域を除いた地図の中央に現在地を置く。
+    const inset = Math.min(Math.max(0, bottomInset), mapElement.clientHeight);
+    map.flyTo({ center: [current.longitude, current.latitude], zoom: 16, duration: 750, offset: [0, -inset / 2] });
   }
 
-  function updateCurrent(point) {
+  function updateBearing() {
+    if (bearingLayer) bearingLayer.style.transform = 'rotate(' + -map.getBearing() + 'deg)';
+  }
+
+  function drawHeading() {
+    if (!cone) return;
+    bearingLayer.hidden = headingAngle === null;
+    if (headingAngle !== null) cone.style.transform = 'rotate(' + headingAngle + 'deg)';
+  }
+
+  function updateHeading(degrees) {
+    if (degrees === null || headingAngle === null) {
+      headingAngle = degrees;
+    } else {
+      // 359度と1度の間は、北をまたぐ短い経路で回す。
+      const delta = ((degrees - headingAngle) % 360 + 540) % 360 - 180;
+      headingAngle += delta;
+    }
+    drawHeading();
+  }
+
+  function cancelPositionAnimation() {
+    if (positionFrame === null) return;
+    cancelAnimationFrame(positionFrame);
+    positionFrame = null;
+  }
+
+  function animatePosition(point) {
+    cancelPositionAnimation();
+    // 測位が続いても、画面に出ている位置から次の座標へ移動する。
+    const start = displayedPosition;
+    const startedAt = performance.now();
+    const longitudeDelta = ((point.longitude - start.longitude + 540) % 360) - 180;
+    function frame(now) {
+      const progress = Math.min(Math.max((now - startedAt) / point.durationMs, 0), 1);
+      const eased = 1 - (1 - progress) ** 2;
+      displayedPosition = progress === 1 ? point : {
+        latitude: start.latitude + (point.latitude - start.latitude) * eased,
+        longitude: start.longitude + longitudeDelta * eased,
+      };
+      currentMarker.setLngLat([displayedPosition.longitude, displayedPosition.latitude]);
+      positionFrame = progress < 1 ? requestAnimationFrame(frame) : null;
+    }
+    positionFrame = requestAnimationFrame(frame);
+  }
+
+  function updateCurrent(point, displayPoint) {
     current = point;
-    recenterButton.hidden = !current;
     if (current) {
+      const target = displayPoint ?? { ...current, durationMs: 450 };
       if (!currentMarker) {
         const dot = document.createElement('div');
         dot.className = 'current-dot';
         dot.setAttribute('aria-label', '現在地');
-        currentDirection = document.createElement('span');
-        currentDirection.className = 'current-direction';
-        currentDirection.setAttribute('aria-hidden', 'true');
-        dot.appendChild(currentDirection);
-        currentMarker = new maplibregl.Marker({ element: dot, rotationAlignment: 'map' })
-          .setLngLat([current.longitude, current.latitude]).addTo(map);
-      } else {
-        currentMarker.setLngLat([current.longitude, current.latitude]);
+        // 扇形は青い点の子要素にし、MapLibreの位置更新を共有する。
+        dot.innerHTML = '<div class="current-bearing" hidden aria-hidden="true">' +
+          '<svg class="current-cone" viewBox="0 0 112 112">' +
+          '<defs><radialGradient id="heading-fade" cx="56" cy="56" r="56" gradientUnits="userSpaceOnUse">' +
+          '<stop offset="15%" stop-color="#147DF1" stop-opacity=".42"/>' +
+          '<stop offset="100%" stop-color="#147DF1" stop-opacity="0"/>' +
+          '</radialGradient></defs>' +
+          '<path d="M24.69 9.57 A56 56 0 0 1 87.31 9.57 L61.59 47.71 A10 10 0 0 0 50.41 47.71 Z" fill="url(#heading-fade)"/>' +
+          '</svg></div>';
+        bearingLayer = dot.querySelector('.current-bearing');
+        cone = dot.querySelector('.current-cone');
+        currentMarker = new maplibregl.Marker({ element: dot, subpixelPositioning: true })
+          .setLngLat([target.longitude, target.latitude]).addTo(map);
+        displayedPosition = target;
+        updateBearing();
+        drawHeading();
+      } else if (markerTarget.latitude !== target.latitude || markerTarget.longitude !== target.longitude) {
+        if (target.durationMs > 0) {
+          animatePosition(target);
+        } else {
+          cancelPositionAnimation();
+          currentMarker.setLngLat([target.longitude, target.latitude]);
+          displayedPosition = target;
+        }
       }
-      const hasHeading = Number.isFinite(current.heading);
-      currentDirection.hidden = !hasHeading;
-      currentMarker.setRotation(hasHeading ? current.heading : 0);
+      markerTarget = target;
       if (!centered) {
         recenterMap();
         centered = true;
       }
     } else {
+      cancelPositionAnimation();
+      displayedPosition = null;
+      markerTarget = null;
       currentMarker?.remove();
       currentMarker = undefined;
-      currentDirection = undefined;
+      bearingLayer = undefined;
+      cone = undefined;
     }
   }
 
   function applySnapshot(snapshot) {
     let issue;
-    try { updateCurrent(snapshot.current); } catch { issue = 'position'; }
+    try { updateCurrent(snapshot.current, snapshot.displayPosition); } catch { issue = 'position'; }
     try { drawRange(); } catch { issue ||= 'range'; }
     try { updatePins(snapshot); } catch { issue ||= 'pins'; }
     return issue;
@@ -220,18 +282,28 @@ export const openFreeMapDocument = `<!doctype html>
 
   window.receiveKokoMapCommand = command => {
     if (!ready) return;
+    if (command?.type === 'recenter') {
+      if (!Number.isFinite(command.bottomInset)) return;
+      try { recenterMap(command.bottomInset); } catch { send({ type: 'recenter-failed' }); }
+      return;
+    }
+    if (command?.type === 'heading') {
+      const { requestId, heading } = command;
+      if (!Number.isSafeInteger(requestId) || requestId < latestHeadingRequestId) return;
+      if (heading !== null && (!Number.isFinite(heading) || heading < 0 || heading >= 360)) return;
+      if (requestId > latestHeadingRequestId) {
+        latestHeadingRequestId = requestId;
+        updateHeading(heading);
+      }
+      send({ type: 'heading-applied', requestId });
+      return;
+    }
     if (command?.type !== 'snapshot' || !Array.isArray(command.snapshot?.pins)) return;
     if (!Number.isSafeInteger(command.requestId) || command.requestId < latestRequestId) return;
     latestRequestId = command.requestId;
     const issue = applySnapshot(command.snapshot);
     send({ type: issue ? 'overlay-error' : 'overlay-applied', issue, requestId: command.requestId });
   };
-
-  // ボタンも地図と同じWebView内に置き、通信の待ち時間なしにカメラを動かす。
-  recenterButton.addEventListener('click', () => {
-    if (!ready || !current) return;
-    try { recenterMap(); } catch { send({ type: 'recenter-failed' }); }
-  });
 
   function receiveCommand(event) {
     if (typeof event.data !== 'string') return;
@@ -246,13 +318,6 @@ export const openFreeMapDocument = `<!doctype html>
   });
   document.addEventListener('message', receiveCommand);
 
-  document.getElementById('credits').addEventListener('click', event => {
-    const link = event.target.closest('a');
-    if (!link) return;
-    event.preventDefault();
-    send({ type: 'credit', url: link.href });
-  });
-
   const timer = setTimeout(() => send({ type: 'map-error' }), 20000);
   (async () => {
     try {
@@ -264,14 +329,18 @@ export const openFreeMapDocument = `<!doctype html>
         container: mapElement, style,
         center: point ? [point.longitude, point.latitude] : [138, 36],
         zoom: point ? 16 : 4.5,
-        attributionControl: false, dragRotate: false, pitchWithRotate: false, maxPitch: 0,
+        attributionControl: false, bearing: 0, dragRotate: false, pitchWithRotate: false, maxPitch: 0,
       });
       mapElement.insertBefore(mask, map.getCanvasContainer().nextSibling);
       map.on('move', drawRange);
       map.on('resize', drawRange);
+      map.on('rotate', updateBearing);
       const viewportObserver = new ResizeObserver(() => map.resize());
       viewportObserver.observe(mapElement);
-      map.once('remove', () => viewportObserver.disconnect());
+      map.once('remove', () => {
+        viewportObserver.disconnect();
+        cancelPositionAnimation();
+      });
       map.once('load', () => {
         ready = true;
         clearTimeout(timer);
@@ -289,8 +358,8 @@ export const openFreeMapDocument = `<!doctype html>
 </html>`;
 
 // 初回描画はネイティブからの実行コマンドが届く前でも行えるようにする。
-export function createOpenFreeMapDocument(snapshot: MapSnapshot): string {
-  const json = JSON.stringify(snapshot).replace(/</g, '\\u003c');
+export function createOpenFreeMapDocument(snapshot: MapSnapshot, heading: number | null = null): string {
+  const json = JSON.stringify({ ...snapshot, heading }).replace(/</g, '\\u003c');
   return openFreeMapDocument.replace(
     '<script type="application/json" id="initial-map-snapshot">null</script>',
     () => `<script type="application/json" id="initial-map-snapshot">${json}</script>`,
