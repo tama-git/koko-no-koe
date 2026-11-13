@@ -68,3 +68,14 @@ class MobileSession(models.Model):
     user = models.ForeignKey(MobileUser, on_delete=models.CASCADE)
     token_hash = models.CharField(max_length=64, unique=True)
     expires_at = models.DateTimeField()
+
+
+class PendingMobileRegistration(models.Model):
+    """メール確認待ちの登録。パスワードと確認コードの原文は保存しない。"""
+    email = models.EmailField(unique=True)
+    password_hash = models.CharField(max_length=128, blank=True)
+    code_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+    failed_attempts = models.PositiveIntegerField(default=0)
+    used_at = models.DateTimeField(null=True, blank=True)
