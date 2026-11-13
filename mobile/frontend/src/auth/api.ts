@@ -11,7 +11,11 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path: 'register' | 'login' | 'logout', body: object, token?: string): Promise<Record<string, unknown>> {
+async function request(
+  path: 'request-register-otp' | 'verify-register-otp' | 'login' | 'logout',
+  body: object,
+  token?: string
+): Promise<Record<string, unknown>> {
   if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) {
     throw new ApiError('接続先が設定されていません。開発者に確認してください。');
   }
@@ -37,7 +41,7 @@ async function request(path: 'register' | 'login' | 'logout', body: object, toke
     if (!response.ok) {
       throw new ApiError(typeof result.error === 'string' && result.error.trim() ? result.error : 'サーバーでエラーが発生しました。', response.status);
     }
-    const expectedStatus = path === 'register' ? 201 : 200;
+    const expectedStatus = path === 'verify-register-otp' ? 201 : 200;
     const requiredValue = result[path === 'login' ? 'token' : 'message'];
     if (response.status !== expectedStatus || typeof requiredValue !== 'string' || !requiredValue.trim()) {
       throw invalidResponse();
@@ -58,8 +62,12 @@ async function request(path: 'register' | 'login' | 'logout', body: object, toke
   }
 }
 
-export async function register(email: string, password: string) {
-  await request('register', { email: email.trim(), password });
+export async function requestRegisterOtp(email: string, password: string) {
+  await request('request-register-otp', { email: email.trim(), password });
+}
+
+export async function verifyRegisterOtp(email: string, code: string) {
+  await request('verify-register-otp', { email: email.trim(), code });
 }
 
 export async function login(email: string, password: string): Promise<string> {

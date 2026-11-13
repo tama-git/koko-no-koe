@@ -64,3 +64,15 @@ AUTHENTICATION_BACKENDS = [
     "accounts.backends.AdminEmailBackend",
 ]
 LOGIN_URL = "admin_side:login"
+
+# ターミナルで表示
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# 実際のメールで表示
+#EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+DEFAULT_FROM_EMAIL = 'ngn2549503@stu.o-hara.ac.jp'
+EMAIL_HOST = 'smtp-mail.outlook.com'
+EMAIL_HOST_PASSWORD = 'xxx'
+EMAIL_USE_TLS = True
+EMAIL_PORT = 587
+EMAIL_HOST_USER = 'ngn2549503@stu.o-hara.ac.jp'

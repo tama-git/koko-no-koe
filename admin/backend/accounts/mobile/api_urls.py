@@ -10,4 +10,6 @@ urlpatterns = [
     path('logout/', api_views.logout),              # ログアウト → セッション削除
     path('change-password/', api_views.change_password),  # パスワード変更
     path('delete-account/', api_views.delete_account),    # 退会
+    path('request-register-otp/', api_views.request_register_otp),  # 新規登録の2段階目（OTPコード送信）
+    path('verify-register-otp/', api_views.verify_register_otp),      # 新規登録の2段階目（OTPコード確認）
 ]

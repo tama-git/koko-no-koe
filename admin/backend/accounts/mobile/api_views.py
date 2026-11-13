@@ -5,7 +5,7 @@ import re
 import secrets
 import uuid
 from datetime import timedelta
-
+from django.core.mail import send_mail
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
@@ -14,7 +14,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from ..models import MobileSession, MobileUser
+from ..models import MobileSession, MobileUser, PendingMobileRegistration
 
 
 def error(message, status):
@@ -52,10 +52,10 @@ def valid_password(password):
     return 8 <= len(password) <= 1024 and sum(bool(re.search(kind, password)) for kind in kinds) >= 3
 
 
-@csrf_exempt  # Cookie による認証は使用しない JSON API。
+@csrf_exempt
 @require_POST
-def register(request):
-    """新規ユーザー登録。成功時は 201 を返す。"""
+def request_register_otp(request):
+    """新規登録の第一段階：メールアドレスとパスワードを受け取り、OTPを生成してメール送信する。"""
     values = credentials(request)
     if values is None:
         return error('送信内容を確認してください。', 400)
@@ -66,13 +66,84 @@ def register(request):
         return error('パスワードは8文字以上で、英大文字・英小文字・数字・記号のうち3種類以上を使ってください。', 400)
     if MobileUser.objects.filter(email__iexact=email).exists():
         return error('このメールアドレスは登録済みです。', 409)
+
+    # 6桁の数字コードを生成
+    code = f"{secrets.randbelow(1000000):06d}"
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
+    expires_at = timezone.now() + timedelta(minutes=10)
+
+    # パスワードの原文は保存せず、Djangoのmake_passwordでハッシュ化して保持する
+    from django.contrib.auth.hashers import make_password
+    password_hash = make_password(password)
+
+    # 既存の仮登録があれば更新、なければ作成
+    PendingMobileRegistration.objects.update_or_create(
+        email__iexact=email,
+        defaults={
+            'email': email,
+            'password_hash': password_hash,
+            'code_hash': code_hash,
+            'expires_at': expires_at,
+            'failed_attempts': 0,
+            'used_at': None,
+        }
+    )
+
+    # メール送信（環境に合わせて設定してください）
+    try:
+        send_mail(
+            subject='【ここの声】メールアドレス確認コード',
+            message=f'ご登録ありがとうございます。確認コードは {code} です。（有効期限：10分）',
+            from_email=None,
+            recipient_list=[email],
+        )
+    except Exception:
+        return error('確認コードのメール送信に失敗しました。時間をおいて再度お試しください。', 500)
+
+    return JsonResponse({'message': '確認コードを送信しました。メールをご確認ください。'})
+
+
+@csrf_exempt
+@require_POST
+def verify_register_otp(request):
+    """新規登録の第二段階：メールアドレスと6桁の確認コードを検証し、ユーザーを作成して本登録を完了する。"""
+    try:
+        if request.content_type != 'application/json' or len(request.body) > 4096:
+            return error('送信内容を確認してください。', 400)
+        data = json.loads(request.body)
+        email = data.get('email', '').strip().lower()
+        code = str(data.get('code', '')).strip()
+        if not email or not code:
+            return error('送信内容を確認してください。', 400)
+    except (ValueError, UnicodeDecodeError):
+        return error('送信内容を確認してください。', 400)
+
+    pending = PendingMobileRegistration.objects.filter(email__iexact=email, used_at__isnull=True).first()
+    if not pending or pending.expires_at < timezone.now():
+        return error('確認コードの有効期限が切れています。もう一度最初からやり直してください。', 400)
+
+    if pending.failed_attempts >= 5:
+        return error('試行回数が上限を超えました。もう一度最初からやり直してください。', 400)
+
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
+    if code_hash != pending.code_hash:
+        pending.failed_attempts += 1
+        pending.save(update_fields=['failed_attempts'])
+        return error('確認コードが正しくありません。', 400)
+
+    if MobileUser.objects.filter(email__iexact=email).exists():
+        return error('このメールアドレスはすでに登録されています。', 409)
+
     try:
         with transaction.atomic():
-            user = MobileUser(email=email, username=uuid.uuid4().hex)
-            user.set_password(password)
+            user = MobileUser(email=pending.email, username=uuid.uuid4().hex)
+            user.password = pending.password_hash  # すでにハッシュ化されたパスワードを設定
             user.save()
+            pending.used_at = timezone.now()
+            pending.save(update_fields=['used_at'])
     except IntegrityError:
-        return error('このメールアドレスは登録済みです。', 409)
+        return error('登録処理に失敗しました。', 409)
+
     return JsonResponse({'message': '登録が完了しました。ログインしてください。'}, status=201)
 
 
