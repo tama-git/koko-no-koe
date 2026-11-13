@@ -11,7 +11,9 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path: 'register' | 'login' | 'logout', body: object, token?: string): Promise<Record<string, unknown>> {
+type AuthPath = 'register/start' | 'register/resend' | 'register' | 'login' | 'logout';
+
+async function request(path: AuthPath, body: object, token?: string): Promise<Record<string, unknown>> {
   if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) {
     throw new ApiError('接続先が設定されていません。開発者に確認してください。');
   }
@@ -58,8 +60,27 @@ async function request(path: 'register' | 'login' | 'logout', body: object, toke
   }
 }
 
-export async function register(email: string, password: string) {
-  await request('register', { email: email.trim(), password });
+function readRegistrationId(data: Record<string, unknown>): string {
+  const id = data.registration_id;
+  if (typeof id !== 'string' || !/^[0-9a-f]{64}$/.test(id)) {
+    throw new ApiError('サーバーの応答を確認できませんでした。');
+  }
+  return id;
+}
+
+export async function startRegistration(email: string, password: string): Promise<string> {
+  return readRegistrationId(await request('register/start', { email: email.trim(), password }));
+}
+
+export async function resendRegistration(email: string, registrationId: string): Promise<void> {
+  const data = await request('register/resend', { email: email.trim(), registration_id: registrationId });
+  if (readRegistrationId(data) !== registrationId) {
+    throw new ApiError('サーバーの応答を確認できませんでした。');
+  }
+}
+
+export async function register(email: string, registrationId: string, code: string) {
+  await request('register', { email: email.trim(), registration_id: registrationId, code });
 }
 
 export async function login(email: string, password: string): Promise<string> {
