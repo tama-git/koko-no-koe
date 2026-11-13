@@ -336,7 +336,7 @@ const styles = StyleSheet.create({
     height: 240,
     borderRadius: 10,
     marginBottom: 16,
-    resizeMode: 'cover',
+    resizeMode: 'contain',
   },
   locationContainer: {
     backgroundColor: '#F3F7F4',

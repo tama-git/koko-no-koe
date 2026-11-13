@@ -8,6 +8,8 @@ import { createPost } from '../postService'; // バックエンドにデータ�
 export function PostConfirmScreen({ route, navigation, token, onCreated }: { route: any; navigation: any; token: string; onCreated: () => void }) {
   // 入力画面（PostCreateScreen）から navigation.navigate で渡されたパラメータを受け取る
   const { message, imageUri, latitude, longitude, isPublished, imageMimeType, imageFileName } = route.params;
+  const hasPostLocation = Number.isFinite(latitude) && Math.abs(latitude) <= 90 &&
+    Number.isFinite(longitude) && Math.abs(longitude) <= 180;
   const busy = useRef(false);
   const [loading, setLoading] = useState(false); // 送信中の通信状態管理
 
@@ -15,7 +17,7 @@ export function PostConfirmScreen({ route, navigation, token, onCreated }: { rou
    * 「この内容で投稿する」ボタンが押されたときの最終送信処理
    */
   const handleFinalSubmit = async () => {
-    if (busy.current) return;
+    if (busy.current || !hasPostLocation) return;
     busy.current = true;
     try {
       setLoading(true); // 送信中フラグをON
@@ -68,7 +70,10 @@ export function PostConfirmScreen({ route, navigation, token, onCreated }: { rou
           )}
 
           <Text style={styles.label}>【位置情報】</Text>
-          <Text style={styles.value}>緯度: {latitude.toFixed(4)} / 経度: {longitude.toFixed(4)}</Text>
+          <Text style={styles.value}>
+            {hasPostLocation ? `緯度: ${latitude.toFixed(4)} / 経度: ${longitude.toFixed(4)}`
+              : '入力画面に戻り、投稿位置を取得してください。'}
+          </Text>
 
           <Text style={styles.label}>【公開設定】</Text>
           <Text style={styles.value}>{isPublished ? '公開' : '本人のみ公開'}</Text>
@@ -76,10 +81,10 @@ export function PostConfirmScreen({ route, navigation, token, onCreated }: { rou
 
         {/* 最終送信ボタン */}
         <TouchableOpacity 
-          style={[styles.button, loading && styles.buttonDisabled]} 
+          style={[styles.button, (loading || !hasPostLocation) && styles.buttonDisabled]}
           onPress={handleFinalSubmit}
           activeOpacity={0.8}
-          disabled={loading}
+          disabled={loading || !hasPostLocation}
         >
           <Text style={styles.buttonText}>{loading ? '送信中...' : 'この内容で投稿する'}</Text>
         </TouchableOpacity>
@@ -108,7 +113,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: '#E2EBE0' },
   label: { fontSize: 13, fontWeight: '600', color: '#5C7A6B', marginTop: 12, marginBottom: 4 },
   value: { fontSize: 15, color: '#1D4030', lineHeight: 22 },
-  previewImage: { width: '100%', height: 200, borderRadius: 8, marginTop: 4, resizeMode: 'cover' },
+  previewImage: { width: '100%', height: 200, borderRadius: 8, marginTop: 4, resizeMode: 'contain' },
   button: { height: 52, backgroundColor: '#2C6049', borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },

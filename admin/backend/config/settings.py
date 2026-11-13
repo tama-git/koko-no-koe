@@ -64,3 +64,13 @@ AUTHENTICATION_BACKENDS = [
     "accounts.backends.AdminEmailBackend",
 ]
 LOGIN_URL = "admin_side:login"
+
+# 会員登録用の送信設定。認証情報はDjangoを起動する環境に設定する。
+EMAIL_HOST = os.environ.get("DJANGO_EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_SSL = os.environ.get("DJANGO_EMAIL_SECURITY") == "ssl"
+EMAIL_USE_TLS = os.environ.get("DJANGO_EMAIL_SECURITY", "tls") == "tls"
+EMAIL_TIMEOUT = 10
+DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "webmaster@localhost")

@@ -1,17 +1,20 @@
 import hashlib
 import json
+import re
 from datetime import timedelta
 from http.cookiejar import CookieJar
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import HTTPCookieProcessor, ProxyHandler, build_opener
+from unittest.mock import patch
 
 from django.contrib.auth import BACKEND_SESSION_KEY, SESSION_KEY, authenticate, get_user_model
+from django.core import mail
 from django.test import Client, LiveServerTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from accounts.models import AdminUser, MobileSession, MobileUser
+from accounts.models import AdminUser, MobileSession, MobileUser, PendingMobileRegistration
 
 
 ADMIN_BACKEND = 'accounts.backends.AdminEmailBackend'
@@ -235,23 +238,88 @@ class MobileApiTests(TestCase):
     def post_json(self, endpoint, data, **headers):
         return self.client.post(f'/api/mobile/{endpoint}/', data=json.dumps(data), content_type='application/json', **headers)
 
+    def registration_data(self, email=' User@Example.com '):
+        response = self.post_json('register/start', {'email': email, 'password': 'Abcdef12'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mail.outbox[-1].to, [email.strip().lower()])
+        code = self.latest_registration_code()
+        self.assertNotIn(code, response.json().values())
+        return {'email': email, 'registration_id': response.json()['registration_id'], 'code': code}
+
+    def latest_registration_code(self):
+        return re.search(r'(?<![0-9])[0-9]{6}(?![0-9])', mail.outbox[-1].body).group()
+
     def test_register_hashes_password_normalizes_email_and_rejects_duplicates(self):
-        response = self.post_json('register', {'email': ' User@Example.com ', 'password': 'Abcdef12'})
-        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self.post_json('register', {
+            'email': 'user@example.com', 'password': 'Abcdef12',
+        }).status_code, 400)
+        data = self.registration_data()
+        self.assertFalse(MobileUser.objects.exists())
+        self.assertEqual(self.post_json('login', {'email': data['email'], 'password': 'Abcdef12'}).status_code, 401)
+        pending = PendingMobileRegistration.objects.get()
+        self.assertNotEqual(pending.code_hash, data['code'])
+        self.assertNotEqual(pending.password_hash, 'Abcdef12')
+        self.assertEqual(self.post_json('register', data).status_code, 201)
         user = MobileUser.objects.get(email='user@example.com')
-        self.assertNotEqual(user.password, 'Abcdef12')
         self.assertTrue(user.check_password('Abcdef12'))
-        self.assertEqual(self.post_json('register', {'email': 'USER@example.com', 'password': 'Abcdef12'}).status_code, 409)
+        self.assertEqual(self.post_json('register', data).status_code, 400)
+        pending.refresh_from_db()
+        self.assertIsNotNone(pending.used_at)
+        self.assertEqual((pending.code_hash, pending.password_hash), ('', ''))
+        self.assertEqual(self.post_json('register/start', {
+            'email': 'USER@example.com', 'password': 'Abcdef12',
+        }).status_code, 409)
         self.assertEqual(MobileUser.objects.count(), 1)
+
+    def test_expired_code_or_different_email_or_registration_id_cannot_register(self):
+        data = self.registration_data()
+        self.assertEqual(self.post_json('register', dict(data, email='other@example.com')).status_code, 400)
+        self.assertEqual(self.post_json('register', dict(data, registration_id='0' * 64)).status_code, 400)
+        PendingMobileRegistration.objects.update(expires_at=timezone.now())
+        self.assertEqual(self.post_json('register', data).status_code, 400)
+        self.assertFalse(MobileUser.objects.exists())
+
+    def test_resend_requires_wait_and_replaces_code_after_attempt_limit(self):
+        data = self.registration_data()
+        resend_data = {'email': data['email'], 'registration_id': data['registration_id']}
+        self.assertEqual(self.post_json('register/resend', resend_data).status_code, 429)
+        self.assertEqual(len(mail.outbox), 1)
+        incorrect = dict(data, code='111111' if data['code'] != '111111' else '222222')
+        for _ in range(4):
+            self.assertEqual(self.post_json('register', incorrect).status_code, 400)
+        self.assertEqual(self.post_json('register', incorrect).status_code, 429)
+        self.assertEqual(self.post_json('register', data).status_code, 429)
+        self.assertFalse(MobileUser.objects.exists())
+
+        PendingMobileRegistration.objects.update(created_at=timezone.now() - timedelta(seconds=60))
+        response = self.post_json('register/resend', resend_data)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['registration_id'], data['registration_id'])
+        new_code = self.latest_registration_code()
+        self.assertNotEqual(new_code, data['code'])
+        self.assertEqual(PendingMobileRegistration.objects.get().failed_attempts, 0)
+        self.assertEqual(self.post_json('register', data).status_code, 400)
+        self.assertEqual(self.post_json('register', dict(data, code=new_code)).status_code, 201)
+
+    def test_failed_mail_delivery_invalidates_code_and_allows_retry_after_interval(self):
+        form = {'email': 'user@example.com', 'password': 'Abcdef12'}
+        with patch('accounts.mobile.api_views.send_mail', side_effect=OSError):
+            self.assertEqual(self.post_json('register/start', form).status_code, 503)
+        self.assertFalse(MobileUser.objects.exists())
+        self.assertLessEqual(PendingMobileRegistration.objects.get().expires_at, timezone.now())
+        self.assertEqual(self.post_json('register/start', form).status_code, 429)
+        PendingMobileRegistration.objects.update(created_at=timezone.now() - timedelta(seconds=60))
+        self.assertEqual(self.post_json('register/start', form).status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
 
     def test_invalid_input_is_rejected_by_server(self):
         for data in ({'email': 'bad', 'password': 'Abcdef12'}, {'email': 'a@example.com', 'password': 'abcdef12'}, {'email': [], 'password': 'Abcdef12'}):
             with self.subTest(data=data):
-                self.assertEqual(self.post_json('register', data).status_code, 400)
+                self.assertEqual(self.post_json('register/start', data).status_code, 400)
         self.assertEqual(MobileUser.objects.count(), 0)
 
     def test_login_logout_token_and_expiry(self):
-        self.post_json('register', {'email': 'u@example.com', 'password': 'Abcdef12'})
+        MobileUser.objects.create_user(username='existing-member', email='u@example.com', password='Abcdef12')
         self.assertEqual(self.post_json('login', {'email': 'u@example.com', 'password': 'wrong'}).status_code, 401)
         response = self.post_json('login', {'email': 'U@example.com', 'password': 'Abcdef12'})
         self.assertEqual(response.status_code, 200)

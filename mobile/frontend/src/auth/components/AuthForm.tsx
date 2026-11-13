@@ -127,7 +127,7 @@ export function AuthForm({ auth, title }: Props) {
                 onPress={handleSubmit}
                 style={({ pressed }) => [styles.button, (pressed || busy) && styles.buttonPressed]}
               >
-                <Text style={styles.buttonText}>{busy ? (isRegister ? '登録中…' : 'ログイン中…') : (isRegister ? '登録する' : 'ログイン')}</Text>
+                <Text style={styles.buttonText}>{busy ? (isRegister ? '送信中…' : 'ログイン中…') : (isRegister ? '認証コードを送信する' : 'ログイン')}</Text>
               </Pressable>
               {message ? <Text style={styles.message} accessibilityLiveRegion="polite">{message}</Text> : null}
             </View>

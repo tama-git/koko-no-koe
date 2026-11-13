@@ -1,9 +1,49 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import * as Location from 'expo-location'; // 位置情報（GPS）を取得するためのモジュール
 import * as ImagePicker from 'expo-image-picker'; // その場でカメラを起動して撮影するためのモジュール
 
+import { requestCurrentLocation } from '../../location/locationRequest';
+import type { LocationResult } from '../../location/locationRequest';
 import { PostVisibilityOptions } from '../components/PostVisibilityOptions';
+
+// AとBは別々に測位し、写真を替えたときは前の写真の測位結果を破棄する。
+function usePostLocation(source: true | ImagePicker.ImagePickerAsset | null) {
+  const [attempt, setAttempt] = useState(0);
+  const [measurement, setMeasurement] = useState<{
+    source: typeof source;
+    attempt: number;
+    result: LocationResult;
+  } | null>(null);
+
+  useEffect(() => {
+    if (source === null) {
+      setMeasurement(null);
+      return;
+    }
+    let active = true;
+    void requestCurrentLocation({
+      requestPermission: () => Location.requestForegroundPermissionsAsync(),
+      servicesEnabled: () => Location.hasServicesEnabledAsync(),
+      getPosition: () => Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+    }).then(result => {
+      if (active) setMeasurement({ source, attempt, result });
+    });
+    return () => { active = false; };
+  }, [source, attempt]);
+
+  return {
+    result: measurement?.source === source && measurement.attempt === attempt ? measurement.result : null,
+    retry: () => setAttempt(previous => previous + 1),
+  };
+}
+
+const locationErrors = {
+  denied: '位置情報の利用を設定で許可してから、再試行してください。',
+  disabled: '端末の位置情報をオンにしてから、再試行してください。',
+  timeout: '位置情報の取得に時間がかかっています。もう一度お試しください。',
+  error: '位置情報を取得できませんでした。もう一度お試しください。',
+};
 
 /** 
  * メッセージ、写真、現在地を入力・取得し、確認画面へデータを渡すための画面 
@@ -11,87 +51,60 @@ import { PostVisibilityOptions } from '../components/PostVisibilityOptions';
 export function PostCreateScreen({ navigation }: { navigation: any }) {
   // 入力フォームの状態管理
   const [message, setMessage] = useState('');                  // 投稿するテキストメッセージ
-  const [imageUri, setImageUri] = useState<string | null>(null); // 撮影された写真の保存先URI
-  const [isPublished, setIsPublished] = useState(true);          // 公開範囲
-  const [loading, setLoading] = useState(false);               // 処理中（連打防止用）の状態管理
-  const busy = useRef(false);
-  const [imageMimeType, setImageMimeType] = useState<string | undefined>();
-  const [imageFileName, setImageFileName] = useState<string | undefined>();
+  const [photo, setPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [isPublished, setIsPublished] = useState(true);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const cameraBusy = useRef(false);
+  const initialLocation = usePostLocation(true);
+  const photoLocation = usePostLocation(photo);
+  const { result: postLocation, retry: retryLocation } = photo ? photoLocation : initialLocation;
+  const canConfirm = !cameraOpen && postLocation?.status === 'ready';
+  const locationLabel = photo ? '撮影後の位置' : '投稿作成開始時の位置';
 
   /**
    * その場でカメラを起動して写真を撮影する処理
    */
   const handleTakePhoto = async () => {
-    // デバイスのカメラ機能に対するアクセス許可をリクエスト
-    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permissionResult.granted) {
-      Alert.alert('エラー', 'カメラの利用が許可されませんでした。設定から許可してください。');
-      return;
-    }
-
-    // カメラを起動して撮影を実行
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true, // 撮影後にトリミング（切り抜き）を許可
-      aspect: [4, 3],      // アスペクト比
-      quality: 0.8,        // 画質設定
-    });
-
-    // ユーザーがキャンセルせず撮影完了した場合、画像のURIを状態に保存
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      setImageUri(result.assets[0].uri);
-      setImageMimeType(result.assets[0].mimeType || undefined);
-      setImageFileName(result.assets[0].fileName || undefined);
-    }
-  };
-
-  /**
-   * 「確認画面へ進む」ボタンが押されたときの処理
-   */
-  const handleGoToConfirm = async () => {
-    if (busy.current) return;
-    if (!message.trim() && !imageUri) {
-      Alert.alert('入力を確認してください', 'メッセージまたは写真を入力してください。');
-      return;
-    }
-    busy.current = true;
+    if (cameraBusy.current) return;
+    cameraBusy.current = true;
+    setCameraOpen(true);
     try {
-      setLoading(true); // 処理中フラグをON
-
-      // 位置情報のパーミッション（権限）をリクエスト
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('エラー', '位置情報の利用が許可されませんでした。設定から許可してください。');
-        setLoading(false);
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('エラー', 'カメラの利用が許可されませんでした。設定から許可してください。');
         return;
       }
 
-      // 高精度な設定で現在のGPS座標（緯度・経度）を取得
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-      
-      const latitude = location.coords.latitude;   // 緯度
-      const longitude = location.coords.longitude; // 経度
-
-      // 画面遷移（navigation）を使って、確認画面にすべてのデータをバトンタッチする
-      navigation.navigate('PostConfirm', {
-        message,
-        imageUri,
-        latitude,
-        longitude,
-        isPublished,
-        imageMimeType,
-        imageFileName,
-      });
-
-    } catch (error: any) {
-      // エラーハンドリング
-      Alert.alert('エラー', error.message || '位置情報の取得に失敗しました');
+      const result = await ImagePicker.launchCameraAsync({ allowsEditing: false, quality: 0.8 });
+      if (!result.canceled && result.assets[0]) {
+        // カメラから戻った直後に、この写真にひも付く位置の取得を始める。
+        setPhoto(result.assets[0]);
+      }
+    } catch {
+      Alert.alert('エラー', 'カメラで写真を撮影できませんでした。もう一度お試しください。');
     } finally {
-      busy.current = false;
-      // 処理終了後にローディングを解除
-      setLoading(false);
+      cameraBusy.current = false;
+      setCameraOpen(false);
     }
+  };
+
+  const handleGoToConfirm = () => {
+    if (cameraBusy.current || postLocation?.status !== 'ready') return;
+    if (!message.trim() && !photo) {
+      Alert.alert('入力を確認してください', 'メッセージまたは写真を入力してください。');
+      return;
+    }
+
+    const { latitude, longitude } = postLocation.coordinates;
+    navigation.navigate('PostConfirm', {
+      message,
+      imageUri: photo?.uri ?? null,
+      latitude,
+      longitude,
+      isPublished,
+      imageMimeType: photo?.mimeType || undefined,
+      imageFileName: photo?.fileName || undefined,
+    });
   };
 
   return (
@@ -116,32 +129,49 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
 
           {/* カメラ撮影セクション */}
           <Text style={styles.label}>写真の添付</Text>
-          <TouchableOpacity style={styles.imagePickerButton} onPress={handleTakePhoto} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.imagePickerButton} onPress={handleTakePhoto}
+            activeOpacity={0.8} disabled={cameraOpen}>
             <Text style={styles.imagePickerButtonText}>
-              {imageUri ? '写真を撮り直す' : 'カメラで写真を撮る'}
+              {photo ? '写真を撮り直す' : 'カメラで写真を撮る'}
             </Text>
           </TouchableOpacity>
 
           {/* 撮影された画像のプレビュー表示エリア */}
-          {imageUri && (
+          {photo && (
             <View style={styles.previewContainer}>
-              <Image source={{ uri: imageUri }} style={styles.previewImage} />
-              <TouchableOpacity onPress={() => setImageUri(null)} style={styles.removeImageButton}>
+              <Image source={{ uri: photo.uri }} style={styles.previewImage} />
+              <TouchableOpacity onPress={() => setPhoto(null)} style={styles.removeImageButton} disabled={cameraOpen}>
                 <Text style={styles.removeImageButtonText}>写真を削除</Text>
               </TouchableOpacity>
             </View>
           )}
 
-          <PostVisibilityOptions value={isPublished} onChange={setIsPublished} disabled={loading} />
+          {postLocation === null ? (
+            <Text accessibilityLiveRegion="polite" style={styles.locationNotice}>
+              {locationLabel}を取得中…
+            </Text>
+          ) : postLocation.status !== 'ready' && (
+            <View style={styles.locationNotice}>
+              <Text accessibilityLiveRegion="polite">{locationLabel}を取得できませんでした。</Text>
+              <Text>{locationErrors[postLocation.status]}</Text>
+              {photo && <Text>再試行する場合は撮影した場所で行ってください。</Text>}
+              <TouchableOpacity accessibilityRole="button" onPress={retryLocation}
+                style={styles.locationRetry} disabled={cameraOpen}>
+                <Text style={styles.imagePickerButtonText}>位置情報の取得を再試行</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-          {/* 確認画面へ進むボタン（処理中は連打防止のため無効化） */}
+          <PostVisibilityOptions value={isPublished} onChange={setIsPublished} disabled={cameraOpen} />
+
+          {/* 投稿位置が決まってから確認画面へ進む。 */}
           <TouchableOpacity 
-            style={[styles.button, loading && styles.buttonDisabled]} 
+            style={[styles.button, !canConfirm && styles.buttonDisabled]}
             onPress={handleGoToConfirm}
             activeOpacity={0.8}
-            disabled={loading}
+            disabled={!canConfirm}
           >
-            <Text style={styles.buttonText}>{loading ? '取得中...' : '確認画面へ進む'}</Text>
+            <Text style={styles.buttonText}>確認画面へ進む</Text>
           </TouchableOpacity>
 
         </View>
@@ -163,10 +193,12 @@ const styles = StyleSheet.create({
   imagePickerButton: { height: 46, borderWidth: 1, borderColor: '#2C6049', borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 16, backgroundColor: '#F3F7F4' },
   imagePickerButtonText: { color: '#2C6049', fontSize: 14, fontWeight: '600' },
   previewContainer: { alignItems: 'center', marginBottom: 20 },
-  previewImage: { width: '100%', height: 180, borderRadius: 10, marginBottom: 8, resizeMode: 'cover' },
+  previewImage: { width: '100%', height: 180, borderRadius: 10, marginBottom: 8, resizeMode: 'contain' },
   removeImageButton: { paddingVertical: 4 },
   removeImageButtonText: { color: '#D9534F', fontSize: 13, fontWeight: '600' },
   button: { height: 52, backgroundColor: '#2C6049', borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  locationNotice: { marginBottom: 12, color: '#395647' },
+  locationRetry: { minHeight: 44, justifyContent: 'center' },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
 });
