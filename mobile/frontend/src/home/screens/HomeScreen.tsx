@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Animated, Modal, View } from 'react-native';
 
 import { AppScreen } from '../../shared/components/AppScreen';
 import { HomeMap } from '../../map/components/HomeMap';
@@ -9,7 +9,6 @@ import { PostBottomSheet } from '../components/PostBottomSheet';
 import { MessageInputBar } from '../components/MessageInputBar';
 import { PostComposerModal } from '../../posts/components/PostComposerModal';
 import { PostDetailModal } from '../../posts/components/PostDetailModal';
-import { OwnPostsModal } from '../../posts/components/OwnPostsModal';
 import { usePostList } from '../../posts/usePostList';
 import { UtilityScreen } from '../../utility/screens/UtilityScreen';
 
@@ -28,13 +27,13 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
   const sheetHeight = useRef(new Animated.Value(0)).current;
   const mapControlsInset = useMemo(() => Animated.add(sheetHeight, inputBarHeight), [sheetHeight, inputBarHeight]);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [selectedPost, setSelectedPost] = useState<number | null>(null);
+  const [selectedPost, setSelectedPost] = useState<{ id: number; own: boolean } | null>(null);
   const [selectedDistance, setSelectedDistance] = useState<{ meters: number | null } | null>(null);
-  const [ownPostsOpen, setOwnPostsOpen] = useState(false);
   const [utilityOpen, setUtilityOpen] = useState(false);
   const { location, displayPosition, heading, retryLocation } = useCurrentLocation();
   const viewerCoordinates = location.status === 'ready' ? location.coordinates : undefined;
   const publicPosts = usePostList(token, 'public', refreshKey, viewerCoordinates);
+  const ownPosts = usePostList(token, 'own', refreshKey);
   const locationFailed = location.status !== 'loading' && location.status !== 'ready';
   const nearbyPosts = useMemo(() => location.status === 'ready'
     ? filterNearbyPosts(publicPosts.posts, location.coordinates.latitude, location.coordinates.longitude)
@@ -47,6 +46,8 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
     error: locationFailed ? '現在地を取得できませんでした。位置情報の設定を確認して再取得してください。' : publicPosts.error,
     refresh: locationFailed ? retryLocation : publicPosts.refresh,
   };
+  const selectNearbyPost = useCallback((id: number) => setSelectedPost({ id, own: false }), []);
+  const selectOwnPost = (id: number) => setSelectedPost({ id, own: true });
   const refreshPosts = () => setRefreshKey(value => value + 1);
   const closePost = () => {
     setSelectedPost(null);
@@ -59,39 +60,25 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
 
         {/* 地図を画面全体に置き、シートの高さは操作ボタンと出典の位置だけに使う。 */}
         <HomeMap postPins={publicPosts.pins} postsLoading={publicPosts.loading} nearbyPostIds={nearbyPostIds}
-          location={location} displayPosition={displayPosition} heading={heading} controlsInset={mapControlsInset} onSelectPost={setSelectedPost}
+          location={location} displayPosition={displayPosition} heading={heading} controlsInset={mapControlsInset} onSelectPost={selectNearbyPost}
           onShowDistance={meters => setSelectedDistance({ meters })} />
-        <SafeAreaView pointerEvents="box-none" style={styles.topActions}>
-          <View pointerEvents="box-none" style={styles.topActionRow}>
-            <Pressable accessibilityRole="button" onPress={() => setOwnPostsOpen(true)} style={styles.topAction}>
-              <Text numberOfLines={1} style={styles.topActionText}>自分の投稿</Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" onPress={() => setUtilityOpen(true)} style={styles.topAction}>
-              <Text numberOfLines={1} style={styles.topActionText}>ユーティリティ</Text>
-            </Pressable>
-          </View>
-        </SafeAreaView>
-        {/* 投稿一覧のボトムシート */}
         <PostBottomSheet bottomInset={inputBarHeight} animatedHeight={sheetHeight}
-          list={nearbyList} onSelectPost={setSelectedPost} token={token} coordinates={viewerCoordinates} />
+          nearbyList={nearbyList} ownList={ownPosts} token={token} coordinates={viewerCoordinates}
+          onSelectNearbyPost={selectNearbyPost} onSelectOwnPost={selectOwnPost} onOpenSettings={() => setUtilityOpen(true)} />
         <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
           onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
         {composerOpen && <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setComposerOpen(false)} />}
-        {selectedPost !== null && <PostDetailModal postId={selectedPost} token={token} onClose={closePost} onHidden={closePost} />}
+        {selectedPost !== null && (
+          <PostDetailModal postId={selectedPost.id} token={token} onClose={closePost} onHidden={closePost}
+            onDeleted={selectedPost.own ? closePost : undefined}
+            onVisibilityChanged={selectedPost.own ? refreshPosts : undefined} />
+        )}
         {selectedDistance !== null && (
           <PostDetailModal distanceMeters={selectedDistance.meters} onClose={() => setSelectedDistance(null)} />
         )}
-        {ownPostsOpen && <OwnPostsModal token={token} refreshKey={refreshKey}
-          onClose={() => setOwnPostsOpen(false)} onPostDeleted={refreshPosts} onVisibilityChanged={refreshPosts} />}
         {utilityOpen && (
           <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeUtility}>
-            <UtilityScreen 
-              onClose={closeUtility} 
-              token={token} 
-              onLogout={onLogout} 
-              // ↓ ここにログイン中のユーザー情報を渡す追加をします
-              user={user}
-            />
+            <UtilityScreen onClose={closeUtility} token={token} onLogout={onLogout} user={user} />
           </Modal>
         )}
 
@@ -99,19 +86,3 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
     </AppScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  topActions: { position: 'absolute', top: 0, left: 0, right: 72 },
-  topActionRow: { flexDirection: 'row', gap: 8, marginLeft: 12, marginVertical: 12 },
-  topAction: { flexShrink: 1, paddingHorizontal: 12, minHeight: 44, justifyContent: 'center', borderRadius: 22, backgroundColor: '#FFFFFF', elevation: 3 },
-  topActionText: { color: '#1D4030', fontSize: 15, fontWeight: '700' },
-  container: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 32, paddingBottom: 32, alignItems: 'center' },
-  content: { width: '100%', maxWidth: 440 },
-  brandName: { color: '#1D4030', fontSize: 20, fontWeight: '700', marginBottom: 36 },
-  title: { color: '#1C3D2D', fontSize: 25, fontWeight: '700', marginBottom: 12 },
-  description: { color: '#79887B', fontSize: 12 },
-  button: { height: 52, backgroundColor: '#2C6049', borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 25 },
-  buttonPressed: { opacity: 0.8 },
-  buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  message: { color: '#705C38', backgroundColor: '#FCF6E9', overflow: 'hidden', borderRadius: 8, fontSize: 12, lineHeight: 19, marginTop: 14, padding: 12 },
-});
