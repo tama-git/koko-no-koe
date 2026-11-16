@@ -1,11 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
-import { deletePost, getPostById, PostApiError, hidePostApi, updatePostVisibility } from '../postService';
+import { deletePost, getPostById, getPostImage, PostApiError, hidePostApi, updatePostVisibility } from '../postService';
 import type { SavedPost } from '../postService';
+import { getCurrentLocation } from '../../location/getCurrentLocation';
 import { PostVisibilityOptions } from '../components/PostVisibilityOptions';
 import { PostLocationMap } from '../../map/components/PostLocationMap';
 import { ReportScreen } from '../../reports/screens/ReportScreen';
 import { ReactionBar } from '../../likes/components/ReactionBar';
+
+const locationUnavailable = '現在地を取得できませんでした。もう一度お試しください。';
+const cannotReadPost = 'この投稿は現在地から閲覧できません。';
+
+async function measureViewerCoordinates() {
+  const location = await getCurrentLocation();
+  if (location.status !== 'ready') throw new PostApiError(locationUnavailable, 400);
+  return location.coordinates;
+}
+
+function readErrorMessage(reason: unknown, fallback: string) {
+  if (reason instanceof PostApiError) {
+    if (reason.status === 400) return locationUnavailable;
+    if (reason.status === 404) return cannotReadPost;
+    if (reason.status === 401) return 'ログインの有効期限を確認し、ログインし直してください。';
+  }
+  return reason instanceof Error ? reason.message : fallback;
+}
 
 /**
  * 投稿データの型定義
@@ -25,6 +44,10 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageError, setImageError] = useState('');
+  const [imageRevision, setImageRevision] = useState(0);
+  const [needsViewerLocation, setNeedsViewerLocation] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState(false);
   const [hiding, setHidden] = useState(false);
@@ -41,13 +64,53 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
     setLoading(true);
     setPost(null);
     setError('');
-    void getPostById(postId, token).then(data => {
-      if (active) setPost(data);
-    }).catch(reason => {
-      if (active) setError(reason instanceof Error ? reason.message : '投稿を取得できませんでした。');
-    }).finally(() => { if (active) setLoading(false); });
+    setImageUri(null);
+    setImageError('');
+    const load = async () => {
+      try {
+        let data: SavedPost;
+        let needsLocation = false;
+        try {
+          data = await getPostById(postId, token);
+        } catch (reason) {
+          if (!active || !(reason instanceof PostApiError) || reason.status !== 400) throw reason;
+          needsLocation = true;
+          const coordinates = await measureViewerCoordinates();
+          if (!active) return;
+          data = await getPostById(postId, token, coordinates);
+        }
+        if (active) {
+          setNeedsViewerLocation(needsLocation);
+          setPost(data);
+        }
+      } catch (reason) {
+        if (active) setError(readErrorMessage(reason, '投稿を取得できませんでした。'));
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
     return () => { active = false; };
   }, [postId, token, revision]);
+
+  const imagePostId = post?.image ? post.id : null;
+  useEffect(() => {
+    if (imagePostId === null || imagePostId !== postId) return;
+    let active = true;
+    setImageError('');
+    const load = async () => {
+      try {
+        const coordinates = needsViewerLocation ? await measureViewerCoordinates() : undefined;
+        if (!active) return;
+        const uri = await getPostImage(imagePostId, token, coordinates);
+        if (active) setImageUri(uri);
+      } catch (reason) {
+        if (active) setImageError(readErrorMessage(reason, '写真を取得できませんでした。'));
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [imagePostId, postId, token, needsViewerLocation, imageRevision]);
 
   const removePost = async () => {
     if (!onDeleted || deletionPending.current || visibilityPending.current) return;
@@ -226,9 +289,18 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
             </Text>
 
             {/* 写真がある場合は表示 */}
-            {post.image && (
-              <Image source={{ uri: post.image, headers: { Authorization: `Bearer ${token}` } }} style={styles.postImage} />
-            )}
+            {post.image && (imageError ? (
+              <>
+                <Text style={styles.errorText}>{imageError}</Text>
+                <TouchableOpacity style={styles.backButton}
+                  onPress={() => { setImageError(''); setImageRevision(value => value + 1); }}>
+                  <Text style={styles.backButtonText}>写真を再取得</Text>
+                </TouchableOpacity>
+              </>
+            ) : imageUri ? (
+              <Image source={{ uri: imageUri }} style={styles.postImage}
+                onError={() => { setImageUri(null); setImageError('写真を表示できませんでした。'); }} />
+            ) : <ActivityIndicator accessibilityLabel="写真を取得中" color="#2C6049" />)}
 
             {/* リアクションバー（公開投稿のみ表示） */}
             {post.is_published === true && post.is_admin_hidden !== true && (

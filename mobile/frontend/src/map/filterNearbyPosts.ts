@@ -11,7 +11,7 @@ export function distanceMeters(
   lat1: number, lon1: number,
   lat2: number, lon2: number,
 ): number {
-  const R = 6371000; // 地球の半径（メートル）
+  const R = 6371008.8; // 地球の半径（メートル）
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
@@ -30,6 +30,6 @@ export function filterNearbyPosts(
 ): SavedPost[] {
   return posts.filter(post => {
     if (post.is_published !== true || post.latitude === null || post.longitude === null) return false;
-    return distanceMeters(currentLat, currentLon, post.latitude, post.longitude) <= RADIUS_METERS;
+    return distanceMeters(currentLat, currentLon, post.latitude, post.longitude) <= RADIUS_METERS + 1e-7;
   });
 }

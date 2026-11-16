@@ -32,8 +32,9 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
   const [selectedDistance, setSelectedDistance] = useState<{ meters: number | null } | null>(null);
   const [ownPostsOpen, setOwnPostsOpen] = useState(false);
   const [utilityOpen, setUtilityOpen] = useState(false);
-  const publicPosts = usePostList(token, 'public', refreshKey);
-  const { location, displayPosition, heading } = useCurrentLocation();
+  const { location, displayPosition, heading, retryLocation } = useCurrentLocation();
+  const publicPosts = usePostList(token, 'public', refreshKey, location.status === 'ready' ? location.coordinates : undefined);
+  const locationFailed = location.status !== 'loading' && location.status !== 'ready';
   const nearbyPosts = useMemo(() => location.status === 'ready'
     ? filterNearbyPosts(publicPosts.posts, location.coordinates.latitude, location.coordinates.longitude)
     : [], [location, publicPosts.posts]);
@@ -42,6 +43,8 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
     ...publicPosts,
     posts: nearbyPosts,
     loading: publicPosts.loading || location.status === 'loading',
+    error: locationFailed ? '現在地を取得できませんでした。位置情報の設定を確認して再取得してください。' : publicPosts.error,
+    refresh: locationFailed ? retryLocation : publicPosts.refresh,
   };
   const refreshPosts = () => setRefreshKey(value => value + 1);
   const closePost = () => {
@@ -54,7 +57,7 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
       <View style={{ flex: 1 }}>
 
         {/* 地図を画面全体に置き、シートの高さは操作ボタンと出典の位置だけに使う。 */}
-        <HomeMap posts={publicPosts.posts} postsLoading={publicPosts.loading} nearbyPostIds={nearbyPostIds}
+        <HomeMap postPins={publicPosts.pins} postsLoading={publicPosts.loading} nearbyPostIds={nearbyPostIds}
           location={location} displayPosition={displayPosition} heading={heading} controlsInset={mapControlsInset} onSelectPost={setSelectedPost}
           onShowDistance={meters => setSelectedDistance({ meters })} />
         <SafeAreaView pointerEvents="box-none" style={styles.topActions}>

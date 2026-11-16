@@ -5,7 +5,7 @@ import type { WebViewMessageEvent, WebViewProps } from 'react-native-webview';
 
 import type { DisplayPosition } from '../../location/displayPosition';
 import type { LocationState } from '../../location/useCurrentLocation';
-import type { SavedPost } from '../../posts/postService';
+import type { PostPin } from '../../posts/postService';
 import { distanceMeters } from '../filterNearbyPosts';
 import { createOpenFreeMapDocument } from '../openFreeMapDocument';
 import type { MapPoint, MapSnapshot } from '../openFreeMapDocument';
@@ -34,8 +34,8 @@ const mapCredits = [
   { label: '© OpenStreetMap', url: 'https://www.openstreetmap.org/copyright' },
 ];
 
-export function HomeMap({ posts, postsLoading, nearbyPostIds, location, displayPosition, heading, controlsInset, onSelectPost, onShowDistance }: {
-  posts: readonly SavedPost[];
+export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displayPosition, heading, controlsInset, onSelectPost, onShowDistance }: {
+  postPins: readonly PostPin[];
   postsLoading: boolean;
   nearbyPostIds: ReadonlySet<number>;
   location: LocationState;
@@ -62,11 +62,8 @@ export function HomeMap({ posts, postsLoading, nearbyPostIds, location, displayP
   const coordinates = location.status === 'ready' ? location.coordinates : null;
   const latitude = coordinates?.latitude ?? null;
   const longitude = coordinates?.longitude ?? null;
-  const pins = useMemo(() => posts.flatMap(({ id, latitude, longitude, is_published }) =>
-    is_published === true && latitude !== null && longitude !== null
-      ? [{ id, latitude, longitude, nearby: nearbyPostIds.has(id) }]
-      : []
-  ), [posts, nearbyPostIds]);
+  const pins = useMemo(() => postPins.map(pin => ({ ...pin, nearby: nearbyPostIds.has(pin.id) })),
+    [postPins, nearbyPostIds]);
 
   // 円の中心となる取得座標と、マーカーの表示座標を分けて渡す。
   const snapshot: MapSnapshot = useMemo(() => ({

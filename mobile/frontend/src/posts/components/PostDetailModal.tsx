@@ -19,6 +19,7 @@ export function PostDetailModal(props: Props) {
               <Text style={styles.distance}>{props.distanceMeters === null
                 ? '現在地の取得後に距離を確認できます。'
                 : `現在地から約 ${(props.distanceMeters / 1000).toFixed(2)} km`}</Text>
+              {props.distanceMeters !== null && <Text>この場所に近づくと閲覧できます。</Text>}
             </View>
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.back}>
               <Text style={styles.backText}>戻る</Text>
