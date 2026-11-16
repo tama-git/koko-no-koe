@@ -40,7 +40,7 @@ async function request(path: AuthPath, body: object, token?: string): Promise<Re
       throw new ApiError(typeof result.error === 'string' && result.error.trim() ? result.error : 'サーバーでエラーが発生しました。', response.status);
     }
     const expectedStatus = path === 'register' ? 201 : 200;
-    const requiredValue = result[path === 'login' ? 'token' : 'message'];
+    const requiredValue = result[path === 'login' || path === 'register' ? 'token' : 'message'];
     if (response.status !== expectedStatus || typeof requiredValue !== 'string' || !requiredValue.trim()) {
       throw invalidResponse();
     }
@@ -79,14 +79,19 @@ export async function resendRegistration(email: string, registrationId: string):
   }
 }
 
-export async function register(email: string, registrationId: string, code: string) {
-  await request('register', { email: email.trim(), registration_id: registrationId, code });
+function readToken(data: Record<string, unknown>): string {
+  if (typeof data.token !== 'string' || !data.token.trim()) {
+    throw new ApiError('サーバーの応答を確認できませんでした。');
+  }
+  return data.token;
+}
+
+export async function register(email: string, registrationId: string, code: string): Promise<string> {
+  return readToken(await request('register', { email: email.trim(), registration_id: registrationId, code }));
 }
 
 export async function login(email: string, password: string): Promise<string> {
-  const data = await request('login', { email: email.trim(), password });
-  if (typeof data.token !== 'string' || !data.token) throw new ApiError('サーバーの応答を確認できませんでした。');
-  return data.token;
+  return readToken(await request('login', { email: email.trim(), password }));
 }
 
 export async function logout(token: string) {

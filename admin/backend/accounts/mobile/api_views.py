@@ -187,10 +187,20 @@ def resend_registration(request):
     return send_registration_code(pending, pending.password_hash)
 
 
+def issue_mobile_session(user):
+    token = secrets.token_urlsafe(32)
+    MobileSession.objects.create(
+        user=user,
+        token_hash=hashlib.sha256(token.encode()).hexdigest(),
+        expires_at=timezone.now() + timedelta(hours=12),
+    )
+    return token
+
+
 @csrf_exempt
 @require_POST
 def register(request):
-    """メール認証に成功したときだけ会員を作成する。"""
+    """メール認証に成功した会員を作成し、ログイン用のトークンを返す。"""
     values = registration_request(request, 'code')
     if values is None:
         return error('送信内容を確認してください。', 400)
@@ -221,10 +231,13 @@ def register(request):
                 return error('認証コードを確認できません。再送してください。', 400)
             if MobileUser.objects.filter(email__iexact=email).exists():
                 return error('このメールアドレスは登録済みです。', 409)
-            MobileUser.objects.create(email=email, username=uuid.uuid4().hex, password=pending.password_hash)
+            user = MobileUser.objects.create(email=email, username=uuid.uuid4().hex, password=pending.password_hash)
+            token = issue_mobile_session(user)
     except IntegrityError:
-        return error('このメールアドレスは登録済みです。', 409)
-    return JsonResponse({'message': '登録が完了しました。ログインしてください。'}, status=201)
+        if MobileUser.objects.filter(email__iexact=email).exists():
+            return error('このメールアドレスは登録済みです。', 409)
+        raise
+    return JsonResponse({'message': '登録が完了しました。', 'token': token}, status=201)
 
 @csrf_exempt
 @require_POST
@@ -239,9 +252,7 @@ def login(request):
     user = matches[0] if len(matches) == 1 else None
     if not user or not user.is_active or not user.check_password(password):
         return error('メールアドレスまたはパスワードが正しくありません。', 401)
-    token = secrets.token_urlsafe(32)
-    MobileSession.objects.create(user=user, token_hash=hashlib.sha256(token.encode()).hexdigest(), expires_at=timezone.now() + timedelta(hours=12))
-    return JsonResponse({'token': token})
+    return JsonResponse({'token': issue_mobile_session(user)})
 
 
 @csrf_exempt

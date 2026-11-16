@@ -19,12 +19,14 @@ test('registration, login and logout requests use the agreed format', async (t) 
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     calls.push({ url, options });
     const operation = url.split('/api/mobile/')[1].slice(0, -1);
-    const result = operation === 'login' ? { token: 'test-token' } : { message: '完了', registration_id: registrationId };
+    const result = operation === 'login' || operation === 'register'
+      ? { token: 'test-token' }
+      : { message: '完了', registration_id: registrationId };
     return Response.json(result, { status: operation === 'register' ? 201 : 200 });
   });
   assert.equal(await api.startRegistration(' user@example.com ', 'Example123'), registrationId);
   await api.resendRegistration(credentials[0], registrationId);
-  await api.register(credentials[0], registrationId, '012345');
+  assert.equal(await api.register(credentials[0], registrationId, '012345'), 'test-token');
   assert.equal(await api.login(...credentials), 'test-token');
   await api.logout('test-token');
   assert.deepEqual(calls.map(({ url }) => url), Object.keys(operations).map((name) => `http://localhost:9999/api/mobile/${name}/`));
@@ -41,8 +43,9 @@ test('malformed successful responses are ApiError for all operations', async (t)
   let response;
   t.mock.method(globalThis, 'fetch', async () => response);
   for (const operation of Object.keys(operations)) {
-    const field = operation === 'login' ? 'token' : 'message';
+    const field = operation === 'login' || operation === 'register' ? 'token' : 'message';
     for (const body of ['<html>error</html>', '', 'null', '[]', 'true', '123', '"text"', '{}',
+      ...(operation === 'register' ? ['{"message":"登録完了"}'] : []),
       JSON.stringify({ [field]: 123 }), JSON.stringify({ [field]: '' }), JSON.stringify({ [field]: ' ' })]) {
       response = new Response(body, { status: operation === 'register' ? 201 : 200 });
       await assert.rejects(operations[operation](), (error) => error instanceof api.ApiError &&

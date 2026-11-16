@@ -81,11 +81,11 @@ export function useAuth() {
         setCode('');
         setMessage('新しい認証コードを送信しました。');
       } else {
-        await api.register(email, registrationId, code);
+        const newToken = await api.register(email, registrationId, code);
+        setToken(newToken);
         setRegistrationId(null);
         setCode('');
         setMode('login');
-        setMessage('登録が完了しました。ログインしてください。');
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : '処理できませんでした。もう一度お試しください。';

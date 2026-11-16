@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import BACKEND_SESSION_KEY, SESSION_KEY, authenticate, get_user_model
 from django.core import mail
+from django.db import IntegrityError
 from django.test import Client, LiveServerTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -249,20 +250,27 @@ class MobileApiTests(TestCase):
     def latest_registration_code(self):
         return re.search(r'(?<![0-9])[0-9]{6}(?![0-9])', mail.outbox[-1].body).group()
 
-    def test_register_hashes_password_normalizes_email_and_rejects_duplicates(self):
+    def test_register_creates_user_and_session_then_rejects_reuse(self):
         self.assertEqual(self.post_json('register', {
             'email': 'user@example.com', 'password': 'Abcdef12',
         }).status_code, 400)
         data = self.registration_data()
         self.assertFalse(MobileUser.objects.exists())
+        self.assertFalse(MobileSession.objects.exists())
         self.assertEqual(self.post_json('login', {'email': data['email'], 'password': 'Abcdef12'}).status_code, 401)
         pending = PendingMobileRegistration.objects.get()
         self.assertNotEqual(pending.code_hash, data['code'])
         self.assertNotEqual(pending.password_hash, 'Abcdef12')
-        self.assertEqual(self.post_json('register', data).status_code, 201)
+        response = self.post_json('register', data)
+        self.assertEqual(response.status_code, 201)
+        token = response.json()['token']
         user = MobileUser.objects.get(email='user@example.com')
         self.assertTrue(user.check_password('Abcdef12'))
+        session = MobileSession.objects.get(user=user)
+        self.assertEqual(session.token_hash, hashlib.sha256(token.encode()).hexdigest())
         self.assertEqual(self.post_json('register', data).status_code, 400)
+        self.assertEqual(MobileSession.objects.count(), 1)
+        self.assertEqual(self.post_json('logout', {}, HTTP_AUTHORIZATION='Bearer ' + token).status_code, 200)
         pending.refresh_from_db()
         self.assertIsNotNone(pending.used_at)
         self.assertEqual((pending.code_hash, pending.password_hash), ('', ''))
@@ -270,6 +278,16 @@ class MobileApiTests(TestCase):
             'email': 'USER@example.com', 'password': 'Abcdef12',
         }).status_code, 409)
         self.assertEqual(MobileUser.objects.count(), 1)
+
+    def test_registration_can_be_retried_if_session_creation_fails(self):
+        data = self.registration_data()
+        with patch('accounts.mobile.api_views.MobileSession.objects.create', side_effect=IntegrityError):
+            with self.assertRaises(IntegrityError):
+                self.post_json('register', data)
+        self.assertFalse(MobileUser.objects.exists())
+        self.assertFalse(MobileSession.objects.exists())
+        self.assertIsNone(PendingMobileRegistration.objects.get().used_at)
+        self.assertEqual(self.post_json('register', data).status_code, 201)
 
     def test_expired_code_or_different_email_or_registration_id_cannot_register(self):
         data = self.registration_data()
