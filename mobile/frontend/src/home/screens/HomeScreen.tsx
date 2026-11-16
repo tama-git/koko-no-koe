@@ -33,7 +33,8 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
   const [ownPostsOpen, setOwnPostsOpen] = useState(false);
   const [utilityOpen, setUtilityOpen] = useState(false);
   const { location, displayPosition, heading, retryLocation } = useCurrentLocation();
-  const publicPosts = usePostList(token, 'public', refreshKey, location.status === 'ready' ? location.coordinates : undefined);
+  const viewerCoordinates = location.status === 'ready' ? location.coordinates : undefined;
+  const publicPosts = usePostList(token, 'public', refreshKey, viewerCoordinates);
   const locationFailed = location.status !== 'loading' && location.status !== 'ready';
   const nearbyPosts = useMemo(() => location.status === 'ready'
     ? filterNearbyPosts(publicPosts.posts, location.coordinates.latitude, location.coordinates.longitude)
@@ -72,7 +73,7 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
         </SafeAreaView>
         {/* 投稿一覧のボトムシート */}
         <PostBottomSheet bottomInset={inputBarHeight} animatedHeight={sheetHeight}
-          list={nearbyList} onSelectPost={setSelectedPost} />
+          list={nearbyList} onSelectPost={setSelectedPost} token={token} coordinates={viewerCoordinates} />
         <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
           onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
         {composerOpen && <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setComposerOpen(false)} />}

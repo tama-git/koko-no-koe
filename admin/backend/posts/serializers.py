@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from .images import InvalidPostPhoto, normalize_post_photo
 from .models import Post, PostReport
 from django.urls import reverse
 
@@ -10,7 +11,7 @@ class PostSerializer(serializers.ModelSerializer):
     latitude = serializers.DecimalField(max_digits=10, decimal_places=7, min_value=-90, max_value=90, coerce_to_string=False)
     longitude = serializers.DecimalField(max_digits=10, decimal_places=7, min_value=-180, max_value=180, coerce_to_string=False)
     message = serializers.CharField(required=False, allow_blank=True, default='')
-    image = serializers.ImageField(required=False, allow_null=True)
+    image = serializers.FileField(required=False, allow_null=True)
     is_admin_hidden = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -24,6 +25,11 @@ class PostSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('写真は1枚まで添付できます。')
         if not attrs.get('message', '').strip() and not attrs.get('image'):
             raise serializers.ValidationError('メッセージまたは写真を入力してください。')
+        if attrs.get('image'):
+            try:
+                attrs['image'] = normalize_post_photo(attrs['image'])
+            except InvalidPostPhoto as error:
+                raise serializers.ValidationError({'image': str(error)}) from error
         return attrs
 
     def to_representation(self, instance):

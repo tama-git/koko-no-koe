@@ -5,6 +5,7 @@ import re
 import secrets
 import uuid
 from datetime import timedelta
+from functools import partial
 
 from django.contrib.auth.hashers import make_password
 from django.core.exceptions import ValidationError
@@ -17,6 +18,9 @@ from django.utils import timezone
 from django.utils.crypto import salted_hmac
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+
+from posts.images import delete_unreferenced_post_photo
+from posts.models import Post
 
 from ..models import MobileSession, MobileUser, PendingMobileRegistration
 
@@ -307,7 +311,14 @@ def delete_account(request):
     if not user.check_password(data['password']):
         return error('パスワードが正しくありません。', 401)
     with transaction.atomic():
+        image_names = tuple(
+            Post.objects.filter(user_id=user, image__isnull=False).exclude(image='')
+            .order_by().values_list('image', flat=True).distinct()
+        )
         user.delete()  # CASCADE で投稿・セッション・リアクション・通報・非表示レコードも削除される
+        # 退会が確定してから削除し、DBがロールバックされた投稿の写真を保護する。
+        for name in image_names:
+            transaction.on_commit(partial(delete_unreferenced_post_photo, name), robust=True)
     return JsonResponse({'message': '退会しました。'})
 
 

@@ -3,9 +3,12 @@ import io
 import tempfile
 from datetime import timedelta
 from math import degrees
+from pathlib import Path
 from unittest.mock import patch
+from uuid import UUID
 
 from PIL import Image
+from django.db import IntegrityError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -13,6 +16,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import MobileSession, MobileUser
 from likes.models import PostReaction
+from .images import THUMBNAIL_DIRECTORY, post_thumbnail_name
 from .models import HiddenPost, Post, PostReport
 from .nearby import EARTH_RADIUS_METERS
 
@@ -137,14 +141,17 @@ class PostApiTests(TestCase):
         self.assertNotContains(response, 'far text')
         self.assertNotContains(response, f"/{far['id']}/image/")
 
-    def test_public_photo_for_another_member_does_not_include_camera_metadata(self):
+    def test_legacy_jpeg_for_another_member_does_not_include_camera_metadata(self):
         data = io.BytesIO()
         exif = Image.Exif()
         exif[271] = 'Test camera'
         exif[274] = 6
         Image.new('RGB', (10, 20), 'white').save(data, 'JPEG', exif=exif)
         photo = SimpleUploadedFile('camera.jpg', data.getvalue(), content_type='image/jpeg')
-        post_id = self.create(image=photo).data['id']
+        post = Post.objects.create(
+            user_id=self.owner, latitude='35.1234567', longitude='139.1234567', is_public=True, image=photo,
+        )
+        post_id = post.pk
         photo_url = f'/api/posts/{post_id}/image/'
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
         response = self.client.get(photo_url, **self.nearby_headers)
@@ -160,11 +167,11 @@ class PostApiTests(TestCase):
         for url in ('/api/posts/public/', f'/api/posts/{post_id}/', photo_url):
             self.assertEqual(self.client.get(url).status_code, 401)
 
-    def test_detail_and_image_enforce_the_same_distance_and_location_rules(self):
+    def test_detail_and_photos_enforce_the_same_distance_and_location_rules(self):
         post_id = self.create(latitude='0', longitude='0', image=self.image()).data['id']
         PostReaction.objects.create(post_id=post_id, user=self.other, emoji='👍')
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
-        for suffix in ('', 'image/'):
+        for suffix in ('', 'image/', 'thumbnail/'):
             url = f'/api/posts/{post_id}/{suffix}'
             cases = [
                 ({}, 400),
@@ -192,12 +199,13 @@ class PostApiTests(TestCase):
         Post.objects.filter(pk=moderated_id).update(admin_hidden_at=timezone.now())
         for post_id in (private_id, moderated_id):
             self.assertEqual(self.client.get(f'/api/posts/{post_id}/').status_code, 200)
-            photo = self.client.get(f'/api/posts/{post_id}/image/')
-            self.assertEqual(photo.status_code, 200)
-            photo.close()
+            for suffix in ('image/', 'thumbnail/'):
+                photo = self.client.get(f'/api/posts/{post_id}/{suffix}')
+                self.assertEqual(photo.status_code, 200)
+                photo.close()
 
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
-        for suffix in ('', 'image/'):
+        for suffix in ('', 'image/', 'thumbnail/'):
             missing = self.client.get(f'/api/posts/{moderated_id + 1}/{suffix}', **self.nearby_headers)
             self.assertEqual(missing.status_code, 404)
             for post_id in (hidden_id, private_id, moderated_id):
@@ -211,15 +219,145 @@ class PostApiTests(TestCase):
         response = self.create(message='', image=self.image())
         self.assertEqual(response.status_code, 201, response.data)
         post = Post.objects.get()
-        self.assertTrue(post.image.name.startswith('posts/'))
+        self.assertRegex(post.image.name, r'^posts/normalized-v1/[a-f0-9]{32}\.jpg$')
         self.assertNotIn('camera', post.image.name)
         self.assertEqual(response.data['image'], f'http://testserver/api/posts/{post.pk}/image/')
         image = self.client.get(f'/api/posts/{post.pk}/image/')
         self.assertEqual(image.status_code, 200)
-        self.assertTrue(b''.join(image.streaming_content).startswith(b'\x89PNG'))
+        self.assertEqual(image['Content-Type'], 'image/jpeg')
+        owner_photo = b''.join(image.streaming_content)
         image.close()
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        with patch('posts.images.Image.open', side_effect=AssertionError('unexpected re-encoding')):
+            other_photo = self.client.get(f'/api/posts/{post.pk}/image/', **self.nearby_headers)
+            self.assertEqual(other_photo.status_code, 200)
+            self.assertEqual(other_photo['Content-Type'], 'image/jpeg')
+            self.assertEqual(b''.join(other_photo.streaming_content), owner_photo)
+            other_photo.close()
+        with Image.open(io.BytesIO(owner_photo)) as saved:
+            self.assertEqual(saved.format, 'JPEG')
+            self.assertEqual(saved.size, (10, 10))
         self.client.credentials()
         self.assertEqual(self.client.get(f'/api/posts/{post.pk}/image/').status_code, 401)
+
+    def test_legacy_png_remains_readable_without_modifying_the_file(self):
+        photo = self.image()
+        png = photo.read()
+        photo.seek(0)
+        post = Post.objects.create(
+            user_id=self.owner, latitude='35.1234567', longitude='139.1234567', is_public=True, image=photo,
+        )
+        url = f'/api/posts/{post.pk}/image/'
+        response = self.client.get(url)
+        self.assertEqual(b''.join(response.streaming_content), png)
+        response.close()
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        response = self.client.get(url, **self.nearby_headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'image/jpeg')
+        response.close()
+        with post.image.open('rb') as stored:
+            self.assertEqual(stored.read(), png)
+
+    def test_thumbnails_are_served_without_new_encoding_and_are_not_public_files(self):
+        created = self.create(message='', image=self.image())
+        self.assertEqual(created.status_code, 201, created.data)
+        image = Post.objects.get(pk=created.data['id']).image
+        name = post_thumbnail_name(image.name)
+        url = f"/api/posts/{created.data['id']}/thumbnail/"
+        with image.storage.open(name, 'rb') as saved:
+            expected = saved.read()
+        with patch('posts.images.Image.open', side_effect=AssertionError('unexpected encoding')):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response['Content-Type'], 'image/jpeg')
+            self.assertEqual(response['Cache-Control'], 'private, no-store')
+            self.assertEqual(b''.join(response.streaming_content), expected)
+            response.close()
+
+        self.assertEqual(self.client.get(f'/media/{name}').status_code, 404)
+        self.client.credentials()
+        self.assertEqual(self.client.get(url).status_code, 401)
+
+    def test_thumbnail_returns_not_found_for_legacy_missing_and_text_only_photos(self):
+        legacy = Post.objects.create(user_id=self.owner, image=self.image())
+        normalized_before_thumbnail = self.create(image=self.image()).data['id']
+        saved_image = Post.objects.get(pk=normalized_before_thumbnail).image
+        saved_image.storage.delete(post_thumbnail_name(saved_image.name))
+        text = self.create().data['id']
+        for post_id in (legacy.pk, normalized_before_thumbnail, text):
+            with self.subTest(post_id=post_id):
+                self.assertEqual(self.client.get(f'/api/posts/{post_id}/thumbnail/').status_code, 404)
+        response = self.client.get(f'/api/posts/{legacy.pk}/image/')
+        self.assertEqual(response.status_code, 200)
+        response.close()
+
+    def test_thumbnail_path_collision_does_not_overwrite_the_existing_file(self):
+        storage = Post._meta.get_field('image').storage
+        reserved = UUID(int=1)
+        name = THUMBNAIL_DIRECTORY + reserved.hex + '.jpg'
+        storage.save(name, self.image())
+
+        with patch('posts.views.uuid.uuid4', side_effect=(reserved, UUID(int=2))):
+            response = self.create(image=self.image())
+
+        self.assertEqual(response.status_code, 201, response.data)
+        post = Post.objects.get()
+        self.assertTrue(post.image.name.endswith(UUID(int=2).hex + '.jpg'))
+        with storage.open(name, 'rb') as existing:
+            self.assertTrue(existing.read().startswith(b'\x89PNG'))
+
+    def test_thumbnail_generation_failure_removes_the_detail_photo(self):
+        with patch('posts.views.create_post_thumbnail', side_effect=OSError('test encoding failure')):
+            response = self.create(image=self.image())
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(Post.objects.exists())
+        self.assertFalse(list(Path(self.media.name).rglob('*.jpg')))
+
+    def test_partial_thumbnail_write_failure_removes_both_files(self):
+        storage = Post._meta.get_field('image').storage
+        save = storage._save
+
+        def fail_after_thumbnail_write(name, contents):
+            actual_name = save(name, contents)
+            if name.startswith(THUMBNAIL_DIRECTORY):
+                raise OSError('test thumbnail write failure')
+            return actual_name
+
+        with patch.object(storage, '_save', side_effect=fail_after_thumbnail_write):
+            response = self.create(image=self.image())
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(Post.objects.exists())
+        self.assertFalse(list(Path(self.media.name).rglob('*.jpg')))
+
+    def test_bad_photo_rejects_entire_post_and_leaves_no_file(self):
+        with patch('posts.images.MAX_SAVED_BYTES', 1):
+            response = self.create(image=self.image())
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('image', response.json())
+        self.assertFalse(Post.objects.exists())
+        self.assertFalse(list(Path(self.media.name).rglob('*.jpg')))
+
+    def test_photo_file_is_removed_if_post_insert_fails(self):
+        with patch('posts.models.Post.save', side_effect=IntegrityError('test failure')):
+            response = self.create(image=self.image())
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(Post.objects.exists())
+        self.assertFalse(list(Path(self.media.name).rglob('*.jpg')))
+
+    def test_partial_photo_file_is_removed_if_storage_fails(self):
+        storage = Post._meta.get_field('image').storage
+        original_save = storage._save
+
+        def fail_after_writing(name, content):
+            original_save(name, content)
+            raise OSError('test write failure')
+
+        with patch.object(storage, '_save', side_effect=fail_after_writing):
+            response = self.create(image=self.image())
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(Post.objects.exists())
+        self.assertFalse(list(Path(self.media.name).rglob('*.jpg')))
 
     def test_missing_invalid_and_deleted_tokens_are_rejected(self):
         for header in ('', 'Bearer unknown', 'Basic abc', 'Bearer'):
@@ -280,6 +418,8 @@ class PostApiTests(TestCase):
         self.assertEqual(response.content, b'')
         self.assertFalse(Post.objects.filter(pk=post_id).exists())
         self.assertFalse(image.storage.exists(image.name))
+        self.assertFalse(image.storage.exists(post_thumbnail_name(image.name)))
+        self.assertEqual(self.client.get(f'{url}thumbnail/').status_code, 404)
         self.assertEqual(self.client.get('/api/posts/').json(), [])
         self.assertEqual(self.client.get('/api/posts/public/').json(), {'pins': [], 'posts': []})
         self.assertEqual(self.client.get(url).status_code, 404)
@@ -318,6 +458,34 @@ class PostApiTests(TestCase):
         self.assertEqual(self.client.delete(f'/api/posts/{text_only.pk}/').status_code, 204)
         self.assertEqual(list(Post.objects.values_list('pk', flat=True)), [shared])
         self.assertTrue(image.storage.exists(image.name))
+        self.assertTrue(image.storage.exists(post_thumbnail_name(image.name)))
+
+    def test_withdrawal_deletes_unshared_photos_and_thumbnails_after_commit(self):
+        owned_id = self.create(image=self.image()).data['id']
+        shared_id = self.create(image=self.image()).data['id']
+        owned = Post.objects.get(pk=owned_id).image
+        shared = Post.objects.get(pk=shared_id).image
+        legacy = Post.objects.create(user_id=self.owner, image=self.image()).image
+        other_post = Post.objects.create(user_id=self.other, image=shared.name)
+
+        url = '/api/mobile/delete-account/'
+        response = self.client.post(url, {'password': 'wrong'}, format='json')
+        self.assertEqual(response.status_code, 401)
+        self.assertTrue(owned.storage.exists(post_thumbnail_name(owned.name)))
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(url, {'password': 'Writer123'}, format='json')
+            self.assertEqual(response.status_code, 200, response.data if hasattr(response, 'data') else response.content)
+            self.assertTrue(owned.storage.exists(owned.name))
+
+        self.assertFalse(MobileUser.objects.filter(pk=self.owner.pk).exists())
+        self.assertFalse(Post.objects.filter(user_id=self.owner).exists())
+        self.assertFalse(owned.storage.exists(owned.name))
+        self.assertFalse(owned.storage.exists(post_thumbnail_name(owned.name)))
+        self.assertFalse(legacy.storage.exists(legacy.name))
+        self.assertTrue(Post.objects.filter(pk=other_post.pk).exists())
+        self.assertTrue(shared.storage.exists(shared.name))
+        self.assertTrue(shared.storage.exists(post_thumbnail_name(shared.name)))
 
     def test_report_uses_the_logged_in_member_and_resets_status_only_on_new_report(self):
         post_id = self.create().data['id']

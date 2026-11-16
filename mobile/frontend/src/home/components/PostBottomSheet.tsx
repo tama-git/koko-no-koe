@@ -11,10 +11,16 @@ import {
 import { clampSheetHeight, getClosestSheetLevel, getSheetHeights } from './bottomSheetGeometry';
 import type { SheetLevel } from './bottomSheetGeometry';
 import { PostList } from '../../posts/components/PostList';
+import type { ViewerCoordinates } from '../../posts/postService';
 import type { PostListState } from '../../posts/usePostList';
 
-export function PostBottomSheet({ bottomInset = 0, animatedHeight, list, onSelectPost }: {
-  bottomInset?: number; animatedHeight: Animated.Value; list: PostListState; onSelectPost: (id: number) => void;
+export function PostBottomSheet({ bottomInset = 0, animatedHeight, list, onSelectPost, token, coordinates }: {
+  bottomInset?: number;
+  animatedHeight: Animated.Value;
+  list: PostListState;
+  onSelectPost: (id: number) => void;
+  token: string;
+  coordinates?: ViewerCoordinates;
 }) {
   const [screenHeight, setScreenHeight] = useState(0);
 
@@ -100,7 +106,7 @@ export function PostBottomSheet({ bottomInset = 0, animatedHeight, list, onSelec
           </View>
 
           <Text style={styles.title}>近くで読める声 {list.posts.length}件</Text>
-          <PostList scope="public" list={list} onSelectPost={onSelectPost} />
+          <PostList scope="public" token={token} coordinates={coordinates} list={list} onSelectPost={onSelectPost} />
         </SafeAreaView>
       </Animated.View>
     </View>

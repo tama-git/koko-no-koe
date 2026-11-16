@@ -29,7 +29,7 @@ export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted, onVis
       : <SafeAreaView style={styles.screen}>
           <View style={styles.header}><Text style={styles.title}>自分の投稿</Text>
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.close}><Text>閉じる</Text></Pressable></View>
-          <PostList scope="own" list={list} onSelectPost={setPostId} />
+          <PostList scope="own" token={token} list={list} onSelectPost={setPostId} />
         </SafeAreaView>}
   </Modal>;
 }
