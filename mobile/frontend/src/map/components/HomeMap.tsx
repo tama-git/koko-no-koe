@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Linking, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Path, Polygon } from 'react-native-svg';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent, WebViewProps } from 'react-native-webview';
 
@@ -46,6 +47,14 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
   onShowDistance: (distance: number | null) => void;
 }) {
   const webView = useRef<WebView<WebViewProps>>(null);
+  
+  // コンパス回転用のAnimated値
+  const compassRotation = useRef(new Animated.Value(0)).current;
+  const compassRotationStyle = useMemo(() => compassRotation.interpolate({
+    inputRange: [-360, 360],
+    outputRange: ['-360deg', '360deg'],
+  }), [compassRotation]);
+
   const latestControlsInset = useRef(0);
   const [mapState, setMapState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [overlayIssue, setOverlayIssue] = useState<OverlayIssue | null>(null);
@@ -62,10 +71,10 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
   const coordinates = location.status === 'ready' ? location.coordinates : null;
   const latitude = coordinates?.latitude ?? null;
   const longitude = coordinates?.longitude ?? null;
-  const pins = useMemo(() => postPins.map(pin => ({ ...pin, nearby: nearbyPostIds.has(pin.id) })),
+  
+  const pins = useMemo(() => (postPins ?? []).map(pin => ({ ...pin, nearby: nearbyPostIds.has(pin.id) })),
     [postPins, nearbyPostIds]);
 
-  // 円の中心となる取得座標と、マーカーの表示座標を分けて渡す。
   const snapshot: MapSnapshot = useMemo(() => ({
     current: latitude !== null && longitude !== null ? { latitude, longitude } : null,
     displayPosition: latitude !== null && longitude !== null ? displayPosition : null,
@@ -82,7 +91,6 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
       setShowPositionNotice(false);
       return;
     }
-    // 方角や細かな測位の変化が続いても、案内までの時間は座標のずれだけで判定する。
     const timer = setTimeout(() => setShowPositionNotice(true), POSITION_NOTICE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [positionNeedsUpdate]);
@@ -95,7 +103,6 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
 
   useEffect(() => {
     if (document || postsLoading || location.status === 'loading') return;
-    // 起動時だけ、取得済みの方位をHTMLに入れる。以降は地図を作り直さない。
     if (location.status === 'ready' && heading === null && !headingWaitElapsed) return;
     setDocument(makeMapDocument(snapshot, snapshotJson, heading));
   }, [document, postsLoading, location.status, snapshot, snapshotJson, heading, headingWaitElapsed]);
@@ -121,7 +128,6 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
     const command = JSON.stringify({ type: 'heading', requestId: id, heading });
     pendingHeading.current = id;
     webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${command}); true;`);
-    // 地図から受信確認が届かないときだけ、別の経路でも送る。
     const retry = setTimeout(() => {
       if (pendingHeading.current === id) webView.current?.postMessage(command);
     }, 300);
@@ -141,6 +147,11 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
     webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${command}); true;`);
   };
 
+  const resetBearing = () => {
+    const command = JSON.stringify({ type: 'reset-bearing' });
+    webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${command}); true;`);
+  };
+
   const reloadMap = useCallback(() => {
     pending.current = null;
     appliedJson.current = null;
@@ -153,7 +164,6 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
     setReloadKey(key => key + 1);
   }, [snapshot, snapshotJson, heading]);
 
-  // 初期HTMLや外部スクリプトが読み込めない場合も、再試行できるようにする。
   useEffect(() => {
     if (mapState !== 'loading' || !document) return;
     const timer = setTimeout(() => setMapState('error'), 25000);
@@ -162,13 +172,23 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
 
   const onMapMessage = ({ nativeEvent }: WebViewMessageEvent) => {
     if (nativeEvent.data.length > 1024) return;
-    let message: { type?: unknown; id?: unknown; issue?: unknown; requestId?: unknown } | null;
+    let message: { type?: unknown; id?: unknown; issue?: unknown; requestId?: unknown; bearing?: unknown } | null;
     try {
       message = JSON.parse(nativeEvent.data);
     } catch {
       return;
     }
     if (!message || typeof message !== 'object') return;
+
+    if (message.type === 'bearing-change' && typeof message.bearing === 'number') {
+      Animated.timing(compassRotation, {
+        toValue: -message.bearing,
+        duration: 50,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+
     if (message.type === 'ready') {
       const issue = readOverlayIssue(message.issue);
       appliedJson.current = document?.json ?? null;
@@ -247,12 +267,37 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
               </Text>
             ))}
           </Text>
-          {appliedPoint && coordinates && (
-            <Pressable accessibilityRole="button" accessibilityLabel="現在地に戻る"
-              style={styles.recenter} onPress={recenter}>
-              <Text style={styles.recenterText}>現在地</Text>
+          <View style={styles.mapButtons}>
+            {/* 2枚目の画像：方角（赤とグレーのコンパス針）ボタン */}
+            <Pressable accessibilityRole="button" accessibilityLabel="北を上に戻す"
+              style={styles.mapButton} onPress={resetBearing}>
+              <Animated.View style={[styles.iconContainer, { transform: [{ rotate: compassRotationStyle }] }]}>
+                <Svg width={26} height={26} viewBox="0 0 24 24">
+                  <Polygon points="12,3 15.5,12 8.5,12" fill="#E53935" />
+                  <Polygon points="12,21 15.5,12 8.5,12" fill="#BDBDBD" />
+                  <Circle cx="12" cy="12" r="2" fill="#FFFFFF" />
+                </Svg>
+              </Animated.View>
             </Pressable>
-          )}
+
+            {/* 1枚目の画像：現在位置に戻る（黒枠のナビゲーション矢印）ボタン */}
+            {appliedPoint && coordinates && (
+              <Pressable accessibilityRole="button" accessibilityLabel="現在地に戻る"
+                style={styles.mapButton} onPress={recenter}>
+                <View style={styles.iconContainer}>
+                  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                    <Path
+                      d="M21 3L3 10.53V11.51L9.84 14.16L12.48 21H13.46L21 3Z"
+                      stroke="#1F1F1F"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                </View>
+              </Pressable>
+            )}
+          </View>
         </Animated.View>
       )}
       {notice ? (
@@ -280,9 +325,29 @@ const styles = StyleSheet.create({
   credits: { flexShrink: 1, backgroundColor: '#FFFFFFCC', borderRadius: 4,
     paddingVertical: 3, paddingHorizontal: 5, color: '#334039', fontSize: 10 },
   creditLink: { textDecorationLine: 'underline' },
-  recenter: { minHeight: 44, paddingHorizontal: 16, justifyContent: 'center', borderRadius: 22,
-    backgroundColor: '#FFFFFF', elevation: 2 },
-  recenterText: { color: '#1D4030', fontSize: 14, fontWeight: '700' },
+  iconContainer: {
+    width: 26,
+    height: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapButtons: {
+    flexDirection: 'column',
+    gap: 10,
+  },
+  mapButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    elevation: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+  },
   map: { flex: 1, backgroundColor: '#EDF0EC' },
   noticeArea: { position: 'absolute', top: 0, left: 0, right: 0 },
   notice: { margin: 12, marginTop: 100, padding: 12, borderRadius: 10, backgroundColor: '#FFFFFFEE' },

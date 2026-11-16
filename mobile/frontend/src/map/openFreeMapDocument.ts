@@ -364,6 +364,13 @@ export const openFreeMapDocument = `<!doctype html>
       try { recenterMap(command.bottomInset); } catch { send({ type: 'recenter-failed' }); }
       return;
     }
+    // 北向きにリセットするコマンド
+    if (command?.type === 'reset-bearing') {
+      if (map) {
+        try { map.easeTo({ bearing: 0, duration: 300 }); } catch {}
+      }
+      return;
+    }
     if (command?.type === 'heading') {
       const { requestId, heading } = command;
       if (!Number.isSafeInteger(requestId) || requestId < latestHeadingRequestId) return;
@@ -406,7 +413,7 @@ export const openFreeMapDocument = `<!doctype html>
         container: mapElement, style,
         center: point ? [point.longitude, point.latitude] : [138, 36],
         zoom: point ? 16 : 4.5,
-        attributionControl: false, bearing: 0, dragRotate: false, pitchWithRotate: false, maxPitch: 0,
+        attributionControl: false, bearing: 0, dragRotate: true, pitchWithRotate: false, maxPitch: 0,
       });
       mapElement.insertBefore(mask, map.getCanvasContainer().nextSibling);
       map.on('move', drawRange);
@@ -414,6 +421,10 @@ export const openFreeMapDocument = `<!doctype html>
       map.on('resize', () => {
         drawRange();
         updateClusterMarkers();
+      });
+      // 地図の回転を検知してアプリ側に現在の角度を送信
+      map.on('rotate', () => {
+        send({ type: 'bearing-change', bearing: map.getBearing() });
       });
       map.on('rotate', updateBearing);
       const viewportObserver = new ResizeObserver(() => map.resize());
