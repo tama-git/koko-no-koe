@@ -2,6 +2,7 @@ import hashlib
 import io
 import tempfile
 from datetime import timedelta
+from math import degrees
 from unittest.mock import patch
 
 from PIL import Image
@@ -11,10 +12,14 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import MobileSession, MobileUser
-from .models import Post, PostReport
+from likes.models import PostReaction
+from .models import HiddenPost, Post, PostReport
+from .nearby import EARTH_RADIUS_METERS
 
 
 class PostApiTests(TestCase):
+    nearby_headers = {'HTTP_X_VIEWER_LATITUDE': '35.1234567', 'HTTP_X_VIEWER_LONGITUDE': '139.1234567'}
+
     @classmethod
     def setUpTestData(cls):
         cls.owner = MobileUser.objects.create_user(username='writer', email='writer@example.com', password='Writer123')
@@ -63,11 +68,11 @@ class PostApiTests(TestCase):
         self.assertFalse(Post.objects.get(pk=post_id).is_public)
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
         self.assertEqual(self.client.get('/api/posts/').json(), [])
-        self.assertEqual(self.client.get('/api/posts/public/').json(), [])
+        self.assertEqual(self.client.get('/api/posts/public/').json(), {'pins': [], 'posts': []})
         self.assertEqual(self.client.get(f'/api/posts/{post_id}/').status_code, 404)
         self.assertEqual(self.client.get(f'/api/posts/{post_id}/image/').status_code, 404)
 
-    def test_public_list_and_detail_allow_other_members_without_location(self):
+    def test_public_list_returns_pins_only_without_valid_location(self):
         first = self.create().data['id']
         latest = self.create(latitude='-33.8650000', longitude='151.2094000').data['id']
         unset_id = self.create().data['id']
@@ -77,12 +82,60 @@ class PostApiTests(TestCase):
         self.assertEqual(self.client.get('/api/posts/').json(), [])
         public = self.client.get('/api/posts/public/')
         self.assertEqual(public.status_code, 200)
-        self.assertEqual([post['id'] for post in public.json()], [latest, first])
-        detail = self.client.get(f'/api/posts/{latest}/')
+        data = public.json()
+        self.assertEqual(data['posts'], [])
+        self.assertEqual([pin['id'] for pin in data['pins']], [latest, first])
+        self.assertTrue(all(set(pin) == {'id', 'latitude', 'longitude'} for pin in data['pins']))
+        for headers in (
+            {'HTTP_X_VIEWER_LATITUDE': '35'},
+            {'HTTP_X_VIEWER_LATITUDE': 'NaN', 'HTTP_X_VIEWER_LONGITUDE': '139'},
+            {'HTTP_X_VIEWER_LATITUDE': '35', 'HTTP_X_VIEWER_LONGITUDE': '181'},
+        ):
+            with self.subTest(headers=headers):
+                invalid = self.client.get('/api/posts/public/', **headers)
+                self.assertEqual(invalid.status_code, 200)
+                self.assertEqual(invalid.json(), data)
+        self.assertEqual(self.client.get(f'/api/posts/{latest}/').status_code, 400)
+        detail = self.client.get(f'/api/posts/{latest}/', HTTP_X_VIEWER_LATITUDE='-33.865',
+                                 HTTP_X_VIEWER_LONGITUDE='151.2094')
         self.assertEqual(detail.status_code, 200)
         self.assertNotIn('user_id', detail.json())
         self.assertEqual(self.client.get(f'/api/posts/{unset_id}/').status_code, 404)
         self.assertEqual(self.client.post('/api/posts/public/', self.payload(), format='json').status_code, 405)
+
+    def test_public_feed_only_serializes_content_for_readable_nearby_posts(self):
+        boundary = self.create(message='nearby text', latitude='0', longitude='0', image=self.image()).json()
+        far = self.create(message='far text', latitude='-0.0100000', longitude='0', image=self.image()).json()
+        private = self.create(is_published=False, latitude='0', longitude='0').json()
+        hidden = self.create(latitude='0', longitude='0').json()
+        moderated = self.create(latitude='0', longitude='0').json()
+        HiddenPost.objects.create(user_id=self.other, post_id_id=hidden['id'])
+        Post.objects.filter(pk=moderated['id']).update(admin_hidden_at=timezone.now())
+        PostReaction.objects.create(post_id=far['id'], user=self.other, emoji='👍')
+
+        own = self.client.get('/api/posts/').json()
+        self.assertEqual({post['id'] for post in own}, {
+            boundary['id'], far['id'], private['id'], hidden['id'], moderated['id'],
+        })
+        self.assertTrue(next(post for post in own if post['id'] == far['id'])['image'])
+
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        own_far = Post.objects.create(user_id=self.other, is_public=True, latitude=-1, longitude=0)
+        response = self.client.get('/api/posts/public/',
+                                   HTTP_X_VIEWER_LATITUDE=str(degrees(250 / EARTH_RADIUS_METERS)),
+                                   HTTP_X_VIEWER_LONGITUDE='0')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        self.assertEqual(response.json(), {
+            'pins': [
+                {'id': own_far.pk, 'latitude': -1, 'longitude': 0},
+                {'id': far['id'], 'latitude': -0.01, 'longitude': 0},
+                {'id': boundary['id'], 'latitude': 0, 'longitude': 0},
+            ],
+            'posts': [boundary],
+        })
+        self.assertNotContains(response, 'far text')
+        self.assertNotContains(response, f"/{far['id']}/image/")
 
     def test_public_photo_for_another_member_does_not_include_camera_metadata(self):
         data = io.BytesIO()
@@ -94,7 +147,7 @@ class PostApiTests(TestCase):
         post_id = self.create(image=photo).data['id']
         photo_url = f'/api/posts/{post_id}/image/'
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
-        response = self.client.get(photo_url)
+        response = self.client.get(photo_url, **self.nearby_headers)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'image/jpeg')
         self.assertEqual(response['Cache-Control'], 'private, no-store')
@@ -106,6 +159,53 @@ class PostApiTests(TestCase):
         self.client.credentials()
         for url in ('/api/posts/public/', f'/api/posts/{post_id}/', photo_url):
             self.assertEqual(self.client.get(url).status_code, 401)
+
+    def test_detail_and_image_enforce_the_same_distance_and_location_rules(self):
+        post_id = self.create(latitude='0', longitude='0', image=self.image()).data['id']
+        PostReaction.objects.create(post_id=post_id, user=self.other, emoji='👍')
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        for suffix in ('', 'image/'):
+            url = f'/api/posts/{post_id}/{suffix}'
+            cases = [
+                ({}, 400),
+                ({'HTTP_X_VIEWER_LATITUDE': '0'}, 400),
+                ({'HTTP_X_VIEWER_LATITUDE': 'NaN', 'HTTP_X_VIEWER_LONGITUDE': '0'}, 400),
+                ({'HTTP_X_VIEWER_LATITUDE': '0', 'HTTP_X_VIEWER_LONGITUDE': '181'}, 400),
+            ]
+            for meters, expected in ((249.99, 200), (250, 200), (250.01, 404)):
+                cases.append(({
+                    'HTTP_X_VIEWER_LATITUDE': str(degrees(meters / EARTH_RADIUS_METERS)),
+                    'HTTP_X_VIEWER_LONGITUDE': '0',
+                }, expected))
+            for headers, expected in cases:
+                with self.subTest(suffix=suffix, headers=headers):
+                    response = self.client.get(url, **headers)
+                    self.assertEqual(response.status_code, expected)
+                    self.assertEqual(response['Cache-Control'], 'private, no-store')
+                    response.close()
+
+    def test_hidden_private_and_moderated_posts_return_generic_not_found(self):
+        hidden_id = self.create(image=self.image()).data['id']
+        private_id = self.create(is_published=False, image=self.image()).data['id']
+        moderated_id = self.create(image=self.image()).data['id']
+        HiddenPost.objects.create(user_id=self.other, post_id_id=hidden_id)
+        Post.objects.filter(pk=moderated_id).update(admin_hidden_at=timezone.now())
+        for post_id in (private_id, moderated_id):
+            self.assertEqual(self.client.get(f'/api/posts/{post_id}/').status_code, 200)
+            photo = self.client.get(f'/api/posts/{post_id}/image/')
+            self.assertEqual(photo.status_code, 200)
+            photo.close()
+
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        for suffix in ('', 'image/'):
+            missing = self.client.get(f'/api/posts/{moderated_id + 1}/{suffix}', **self.nearby_headers)
+            self.assertEqual(missing.status_code, 404)
+            for post_id in (hidden_id, private_id, moderated_id):
+                for headers in ({}, self.nearby_headers):
+                    with self.subTest(post_id=post_id, suffix=suffix, headers=headers):
+                        response = self.client.get(f'/api/posts/{post_id}/{suffix}', **headers)
+                        self.assertEqual(response.status_code, 404)
+                        self.assertEqual(response.json(), missing.json())
 
     def test_photo_only_post_upload_and_protected_download(self):
         response = self.create(message='', image=self.image())
@@ -181,7 +281,7 @@ class PostApiTests(TestCase):
         self.assertFalse(Post.objects.filter(pk=post_id).exists())
         self.assertFalse(image.storage.exists(image.name))
         self.assertEqual(self.client.get('/api/posts/').json(), [])
-        self.assertEqual(self.client.get('/api/posts/public/').json(), [])
+        self.assertEqual(self.client.get('/api/posts/public/').json(), {'pins': [], 'posts': []})
         self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.get(f'{url}image/').status_code, 404)
         self.assertEqual(self.client.delete(url).status_code, 404)
@@ -191,7 +291,7 @@ class PostApiTests(TestCase):
         image = Post.objects.get(pk=post_id).image
         url = f'/api/posts/{post_id}/'
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
-        self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertEqual(self.client.get(url, **self.nearby_headers).status_code, 200)
         self.assertEqual(self.client.delete(url).status_code, 404)
         self.client.credentials()
         self.assertEqual(self.client.delete(url).status_code, 401)
@@ -264,7 +364,7 @@ class PostApiTests(TestCase):
         self.client.credentials()
         self.assertEqual(self.client.post(f'/api/posts/{public}/reports/', data, format='json').status_code, 401)
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
-        self.assertTrue(self.client.get(f'/api/posts/{public}/').json()['can_report'])
+        self.assertTrue(self.client.get(f'/api/posts/{public}/', **self.nearby_headers).json()['can_report'])
         self.assertEqual(self.client.post(f'/api/posts/{private}/reports/', data, format='json').status_code, 404)
         self.assertEqual(self.client.get(f'/api/posts/{public}/reports/').status_code, 405)
         self.assertFalse(PostReport.objects.exists())
@@ -287,10 +387,10 @@ class PostApiTests(TestCase):
         owner_photo = self.client.get(photo)
         self.assertEqual(owner_photo.status_code, 200)
         owner_photo.close()
-        self.assertEqual(self.client.get('/api/posts/public/').json(), [])
+        self.assertEqual(self.client.get('/api/posts/public/').json(), {'pins': [], 'posts': []})
 
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
-        self.assertEqual(self.client.get('/api/posts/public/').json(), [])
+        self.assertEqual(self.client.get('/api/posts/public/').json(), {'pins': [], 'posts': []})
         self.assertEqual(self.client.get(detail).status_code, 404)
         self.assertEqual(self.client.get(photo).status_code, 404)
         self.assertEqual(self.client.post(f'{detail}reports/', {'category': 'spam'}, format='json').status_code, 404)
@@ -306,15 +406,15 @@ class PostApiTests(TestCase):
         response = self.client.patch(visibility, {'is_published': True}, format='json')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'is_published': True})
-        self.assertEqual([post['id'] for post in other_client.get('/api/posts/public/').json()], [post_id])
-        self.assertEqual(other_client.get(detail).status_code, 200)
-        photo = other_client.get(f'{detail}image/')
+        self.assertEqual([post['id'] for post in other_client.get('/api/posts/public/', **self.nearby_headers).json()['posts']], [post_id])
+        self.assertEqual(other_client.get(detail, **self.nearby_headers).status_code, 200)
+        photo = other_client.get(f'{detail}image/', **self.nearby_headers)
         self.assertEqual(photo.status_code, 200)
         photo.close()
 
         self.assertEqual(self.client.patch(visibility, {'is_published': False}, format='json').status_code, 200)
         self.assertFalse(self.client.get(detail).json()['is_published'])
-        self.assertEqual(other_client.get('/api/posts/public/').json(), [])
+        self.assertEqual(other_client.get('/api/posts/public/').json(), {'pins': [], 'posts': []})
         self.assertEqual(other_client.get(detail).status_code, 404)
         self.assertEqual(other_client.get(f'{detail}image/').status_code, 404)
 

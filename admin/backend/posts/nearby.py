@@ -11,15 +11,26 @@ def viewer_coordinates(request, required=False):
     values = (request.headers.get('X-Viewer-Latitude'), request.headers.get('X-Viewer-Longitude'))
     if not required and values == (None, None):
         return None
-    try:
-        latitude, longitude = map(float, values)
-        if not (math.isfinite(latitude) and math.isfinite(longitude)
-                and -90 <= latitude <= 90 and -180 <= longitude <= 180):
-            raise ValueError
-        return latitude, longitude
-    except (ValueError, TypeError, OverflowError):
+    coordinates = validated_coordinates(values)
+    if coordinates is None:
         # 不正値・現在地そのものを応答やログに出さない。
         raise ValidationError('有効な現在地の緯度・経度が必要です。')
+    return coordinates
+
+
+def validated_coordinates(values):
+    """有効な緯度・経度を数値にし、欠落や不正値は None にする。"""
+    if not isinstance(values, (tuple, list)) or len(values) != 2:
+        return None
+    if any(isinstance(value, bool) for value in values):
+        return None
+    try:
+        latitude, longitude = map(float, values)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    if -90 <= latitude <= 90 and -180 <= longitude <= 180:
+        return latitude, longitude
+    return None
 
 
 def distance_meters(latitude, longitude, other_latitude, other_longitude):
@@ -34,8 +45,8 @@ def within_radius(queryset, coordinates, radius_meters):
     latitude, longitude = coordinates
     delta = math.degrees(radius_meters / EARTH_RADIUS_METERS)
     # 先に緯度の帯で候補を絞り、距離は球面上で計算（日付変更線にも対応）。
-    candidates = queryset.filter(latitude__gte=latitude - delta - 1e-9,
-                                 latitude__lte=latitude + delta + 1e-9,
+    candidates = queryset.filter(latitude__gte=max(-90, latitude - delta - 1e-9),
+                                 latitude__lte=min(90, latitude + delta + 1e-9),
                                  longitude__gte=-180, longitude__lte=180)
     ids = [pk for pk, lat, lon in candidates.values_list('pk', 'latitude', 'longitude')
            if distance_meters(latitude, longitude, float(lat), float(lon)) <= radius_meters + 1e-7]

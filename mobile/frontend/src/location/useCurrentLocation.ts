@@ -14,6 +14,7 @@ export function useCurrentLocation() {
   const [state, setState] = useState<LocationState>({ status: 'loading' });
   const [displayPosition, setDisplayPosition] = useState<DisplayPosition | null>(null);
   const [heading, setHeading] = useState<number | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let generation = 0;
     let subscription: Location.LocationSubscription | undefined;
@@ -93,6 +94,7 @@ export function useCurrentLocation() {
       appState.remove();
       stop();
     };
-  }, []);
-  return { location: state, displayPosition, heading };
+  }, [attempt]);
+  const retryLocation = () => setAttempt(previous => previous + 1);
+  return { location: state, displayPosition, heading, retryLocation };
 }

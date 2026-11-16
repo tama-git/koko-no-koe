@@ -13,6 +13,8 @@ from rest_framework.response import Response
 
 from .authentication import MobileBearerAuthentication
 from .models import HiddenPost, Post, PostReport
+from .nearby import viewer_coordinates
+from .read_access import readable_posts, visible_public_posts
 from .serializers import PostDetailSerializer, PostReportSerializer, PostSerializer
 
 
@@ -47,14 +49,41 @@ class PostListCreateAPIView(PostAccess, generics.ListCreateAPIView):
 
 
 class PublicPostListAPIView(PostAccess, generics.ListAPIView):
-    def get_queryset(self):
-        hidden = HiddenPost.objects.filter(user_id=self.request.user).values('post_id')
-        return super().get_queryset().filter(self.public_filter()).exclude(pk__in=hidden)
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        viewer = request.user
+        try:
+            coordinates = viewer_coordinates(request)
+        except ValidationError:
+            # 現在地が使えなくても地図は表示できる。本文は返さない。
+            coordinates = None
+
+        visible = visible_public_posts(queryset, viewer).filter(
+            latitude__range=(-90, 90), longitude__range=(-180, 180),
+        )
+        pins = [
+            {'id': post_id, 'latitude': float(latitude), 'longitude': float(longitude)}
+            for post_id, latitude, longitude in visible.values_list('pk', 'latitude', 'longitude')
+        ]
+        posts = readable_posts(queryset, viewer, coordinates, include_owned=False)
+        return Response({'pins': pins, 'posts': self.get_serializer(posts, many=True).data})
 
 
 class ReadablePostAccess(PostAccess):
     def get_queryset(self):
-        return super().get_queryset().filter(Q(user_id=self.request.user) | self.public_filter())
+        queryset = super().get_queryset().filter(pk=self.kwargs['pk'])
+        viewer = self.request.user
+        if queryset.filter(user_id=viewer).exists():
+            return readable_posts(queryset, viewer)
+
+        try:
+            coordinates = viewer_coordinates(self.request, required=True)
+        except ValidationError:
+            # 閲覧対象外の投稿には、位置情報の有無にかかわらず同じ404を返す。
+            if visible_public_posts(queryset, viewer).exists():
+                raise
+            return queryset.none()
+        return readable_posts(queryset, viewer, coordinates)
 
 
 class PostPhotoDeletionError(APIException):
@@ -66,10 +95,9 @@ class PostDetailAPIView(ReadablePostAccess, generics.RetrieveDestroyAPIView):
     serializer_class = PostDetailSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset()
         if self.request.method == 'DELETE':
-            return queryset.filter(user_id=self.request.user)
-        return queryset
+            return PostAccess.get_queryset(self).filter(user_id=self.request.user)
+        return super().get_queryset()
 
     def perform_destroy(self, instance):
         image = instance.image

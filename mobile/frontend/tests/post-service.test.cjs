@@ -39,17 +39,23 @@ test('existing list and create endpoints and form fields are preserved', async (
   });
 });
 
-test('public list uses the authenticated API without sending device coordinates', async (t) => {
+test('public feed sends viewer coordinates when supplied and returns pins separately', async (t) => {
   const service = await loadService('http://localhost:9999');
   const post = { id: 7, message: 'public', image: null, latitude: 35, longitude: 139, is_published: true, created_at: '2026-11-05T00:00:00Z' };
+  const pins = [{ id: 7, latitude: 35, longitude: 139 }, { id: 8, latitude: 36, longitude: 139 }];
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(url, 'http://localhost:9999/api/posts/public/');
     assert.equal(options.method, 'GET');
-    assert.deepEqual(options.headers, { Authorization: 'Bearer test-token' });
+    assert.equal(options.headers.Authorization, 'Bearer test-token');
+    assert.equal(options.cache, 'no-store');
     assert.equal(options.body, undefined);
-    return Response.json([post]);
+    const latitude = options.headers['X-Viewer-Latitude'];
+    const longitude = options.headers['X-Viewer-Longitude'];
+    assert.deepEqual([latitude, longitude], latitude === undefined ? [undefined, undefined] : ['35', '139']);
+    return Response.json({ pins, posts: latitude === undefined ? [] : [post] });
   });
-  assert.deepEqual(await service.loadPublicPosts('test-token'), [post]);
+  assert.deepEqual(await service.loadPublicPosts('test-token'), { pins, posts: [] });
+  assert.deepEqual(await service.loadPublicPosts('test-token', { latitude: 35, longitude: 139 }), { pins, posts: [post] });
 });
 
 test('visibility update sends a JSON boolean and checks the saved setting', async (t) => {
@@ -158,4 +164,55 @@ test('missing auth, invalid responses and server validation errors never report 
     error => error.status === 400 && error.message.includes('入力内容'));
   response = new Response('not json', { status: 201 });
   await assert.rejects(service.createPost({ message: 'test', latitude: 35, longitude: 139, is_published: true }, 'test-token'), service.PostApiError);
+});
+
+test('detail and image use their own viewer coordinates and bypass cached responses', async (t) => {
+  const calls = [];
+  const post = { id: 7, message: 'public', image: 'https://example.com/photo', latitude: 35,
+    longitude: 139, is_published: true, created_at: '2026-11-05T00:00:00Z' };
+  const service = await loadService('http://localhost:9999');
+  const reader = class {
+    readAsDataURL(blob) {
+      assert.equal(blob.type, 'image/jpeg');
+      this.result = 'data:image/jpeg;base64,dGVzdA==';
+      this.onload();
+    }
+  };
+  const previousReader = Object.getOwnPropertyDescriptor(globalThis, 'FileReader');
+  Object.defineProperty(globalThis, 'FileReader', { value: reader, configurable: true });
+  t.after(() => {
+    if (previousReader) Object.defineProperty(globalThis, 'FileReader', previousReader);
+    else delete globalThis.FileReader;
+  });
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push({ url, options });
+    if (url.endsWith('image/')) {
+      return options.headers['X-Viewer-Latitude'] === '36'
+        ? Response.json({ detail: 'Not found' }, { status: 404 })
+        : new Response('test', { headers: { 'Content-Type': 'image/jpeg' } });
+    }
+    return Response.json(post);
+  });
+
+  await service.getPostById(7, 'token');
+  await service.getPostById(7, 'token', { latitude: 35, longitude: 139 });
+  assert.equal(await service.getPostImage(7, 'token', { latitude: 35.0001, longitude: 139 }),
+    'data:image/jpeg;base64,dGVzdA==');
+  await assert.rejects(service.getPostImage(7, 'token', { latitude: 36, longitude: 139 }),
+    error => error instanceof service.PostApiError && error.status === 404);
+  assert.equal(await service.getPostImage(7, 'token'), 'data:image/jpeg;base64,dGVzdA==');
+
+  assert.deepEqual(calls.map(({ url }) => url), [
+    'http://localhost:9999/api/posts/7/', 'http://localhost:9999/api/posts/7/',
+    ...Array(3).fill('http://localhost:9999/api/posts/7/image/'),
+  ]);
+  assert.deepEqual(calls.map(({ options }) => options.headers['X-Viewer-Latitude']),
+    [undefined, '35', '35.0001', '36', undefined]);
+  assert.deepEqual(calls.map(({ options }) => options.headers['X-Viewer-Longitude']),
+    [undefined, '139', '139', '139', undefined]);
+  for (const { options } of calls) {
+    assert.equal(options.headers.Authorization, 'Bearer token');
+    assert.equal(options.headers['Cache-Control'], 'no-cache, no-store');
+    assert.equal(options.cache, 'no-store');
+  }
 });
