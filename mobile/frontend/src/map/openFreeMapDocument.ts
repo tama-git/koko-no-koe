@@ -19,6 +19,7 @@ export const openFreeMapDocument = `<!doctype html>
         integrity="sha384-Nq6PQ+9vJPvw7U/VfDELyrWoGQMsy0gi6QShhaSrGzkpF5KkM40csg2leky+YMTd" crossorigin="anonymous">
   <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"
           integrity="sha384-GfxBM9x46BaAFxtCq39Fxir8fNZ4VDnwgfi6Kzi5/F1tAFsm0amuuV8kd+Pxzuf/" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/supercluster@8.0.1/dist/supercluster.min.js" crossorigin="anonymous"></script>
   <style>
     html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #edf0ec; }
     #range { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -28,6 +29,20 @@ export const openFreeMapDocument = `<!doctype html>
       width: 112px; height: 112px; transition: transform 160ms cubic-bezier(.22, .61, .36, 1); }
     .current-dot::after { content: ''; position: absolute; inset: 0; border: 2px solid white;
       border-radius: 50%; background: #147df1; box-shadow: 0 0 0 2px #147df14a; }
+    .cluster-marker {
+      background: #2C6049;
+      color: #ffffff;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-weight: 700;
+      font-size: 13px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+      border: 2px solid #ffffff;
+      cursor: pointer;
+      user-select: none;
+    }
   </style>
 </head>
 <body>
@@ -41,7 +56,6 @@ export const openFreeMapDocument = `<!doctype html>
   const context = mask.getContext('2d');
   const radius = ${RADIUS_METERS};
   const radians = Math.PI / 180;
-  const pins = new Map();
   const initial = JSON.parse(document.getElementById('initial-map-snapshot').textContent);
   let map;
   let ready = false;
@@ -56,6 +70,10 @@ export const openFreeMapDocument = `<!doctype html>
   let headingAngle = Number.isFinite(initial?.heading) ? initial.heading : null;
   let latestHeadingRequestId = 0;
   let centered = false;
+
+  // クラスタリング管理用の変数
+  let clusterIndex = null;
+  const activeMarkers = [];
 
   function walkingStyle(style) {
     const poiClass = ['get', 'class'];
@@ -132,42 +150,101 @@ export const openFreeMapDocument = `<!doctype html>
     context.stroke();
   }
 
-  function makePin(pin) {
-    const marker = new maplibregl.Marker({ color: pin.nearby ? '#B43A37' : '#446C9A' });
-    const element = marker.getElement();
-    element.setAttribute('role', 'button');
-    element.setAttribute('aria-label', pin.nearby ? '投稿詳細を開く' : '投稿までの距離を表示');
-    element.tabIndex = 0;
-    const select = () => send({ type: 'pin', id: pin.id });
-    element.addEventListener('click', select);
-    element.addEventListener('keydown', event => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        select();
+  function clearMarkers() {
+    for (const marker of activeMarkers) {
+      marker.remove();
+    }
+    activeMarkers.length = 0;
+  }
+
+  function updateClusterMarkers() {
+    if (!map || !clusterIndex) return;
+    clearMarkers();
+
+    const bounds = map.getBounds();
+    const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
+    const zoom = Math.floor(map.getZoom());
+    const clusters = clusterIndex.getClusters(bbox, zoom);
+
+    for (const cluster of clusters) {
+      const [longitude, latitude] = cluster.geometry.coordinates;
+      const { cluster: isCluster, point_count: pointCount } = cluster.properties;
+
+      if (isCluster) {
+        // 複数のピンがまとまったクラスターマーカー
+        const size = Math.min(36 + Math.floor(pointCount / 5) * 4, 56);
+        const el = document.createElement('div');
+        el.className = 'cluster-marker';
+        el.style.width = size + 'px';
+        el.style.height = size + 'px';
+        el.textContent = String(pointCount);
+        el.setAttribute('role', 'button');
+        el.setAttribute('aria-label', pointCount + '件の投稿を拡大表示');
+        el.tabIndex = 0;
+
+        const expand = () => {
+          const nextZoom = Math.min(clusterIndex.getClusterExpansionZoom(cluster.id), 20);
+          map.flyTo({ center: [longitude, latitude], zoom: nextZoom, duration: 500 });
+        };
+
+        el.addEventListener('click', expand);
+        el.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            expand();
+          }
+        });
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([longitude, latitude])
+          .addTo(map);
+        activeMarkers.push(marker);
+      } else {
+        // 個別のピンマーカー
+        const pinProps = cluster.properties;
+        const marker = new maplibregl.Marker({ color: pinProps.nearby ? '#B43A37' : '#446C9A' });
+        const element = marker.getElement();
+        element.setAttribute('role', 'button');
+        element.setAttribute('aria-label', pinProps.nearby ? '投稿詳細を開く' : '投稿までの距離を表示');
+        element.tabIndex = 0;
+
+        const select = () => send({ type: 'pin', id: pinProps.id });
+        element.addEventListener('click', select);
+        element.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            select();
+          }
+        });
+
+        marker.setLngLat([longitude, latitude]).addTo(map);
+        activeMarkers.push(marker);
       }
-    });
-    marker.setLngLat([pin.longitude, pin.latitude]).addTo(map);
-    return marker;
+    }
   }
 
   function updatePins(snapshot) {
-    const present = new Set(snapshot.pins.map(pin => pin.id));
-    for (const [id, entry] of pins) {
-      if (!present.has(id)) {
-        entry.marker.remove();
-        pins.delete(id);
-      }
+    const points = snapshot.pins.map(pin => ({
+      type: 'Feature',
+      properties: {
+        cluster: false,
+        id: pin.id,
+        nearby: pin.nearby,
+      },
+      geometry: {
+        type: 'Point',
+        coordinates: [pin.longitude, pin.latitude],
+      },
+    }));
+
+    if (!clusterIndex) {
+      clusterIndex = new Supercluster({
+        radius: 50,
+        maxZoom: 16,
+      });
     }
-    for (const pin of snapshot.pins) {
-      const entry = pins.get(pin.id);
-      if (entry && entry.nearby === pin.nearby) {
-        entry.marker.setLngLat([pin.longitude, pin.latitude]);
-      } else {
-        const marker = makePin(pin);
-        entry?.marker.remove();
-        pins.set(pin.id, { marker, nearby: pin.nearby });
-      }
-    }
+    clusterIndex.load(points);
+    updateClusterMarkers();
   }
 
   function recenterMap(bottomInset = 0) {
@@ -333,7 +410,11 @@ export const openFreeMapDocument = `<!doctype html>
       });
       mapElement.insertBefore(mask, map.getCanvasContainer().nextSibling);
       map.on('move', drawRange);
-      map.on('resize', drawRange);
+      map.on('moveend', updateClusterMarkers);
+      map.on('resize', () => {
+        drawRange();
+        updateClusterMarkers();
+      });
       map.on('rotate', updateBearing);
       const viewportObserver = new ResizeObserver(() => map.resize());
       viewportObserver.observe(mapElement);
