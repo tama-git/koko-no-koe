@@ -193,11 +193,24 @@ export async function getPostById(postId: number, token: string, viewerCoordinat
   return parsePost(await request(postPath(postId), token, { viewerCoordinates, revalidate: true }));
 }
 
-export async function getPostImage(postId: number, token: string, coordinates?: ViewerCoordinates): Promise<string> {
-  const url = getApiUrl() + postPath(postId) + 'image/';
+export function getPostImage(postId: number, token: string, coordinates?: ViewerCoordinates): Promise<string> {
+  return getProtectedPostPhoto(postId, 'image/', token, coordinates);
+}
+
+export function getPostThumbnail(postId: number, token: string, coordinates?: ViewerCoordinates, signal?: AbortSignal): Promise<string> {
+  return getProtectedPostPhoto(postId, 'thumbnail/', token, coordinates, signal);
+}
+
+async function getProtectedPostPhoto(
+  postId: number, path: 'image/' | 'thumbnail/', token: string, coordinates?: ViewerCoordinates, signal?: AbortSignal,
+): Promise<string> {
+  const url = getApiUrl() + postPath(postId) + path;
   const headers = { ...readHeaders(token, coordinates), 'Cache-Control': 'no-cache, no-store' };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const abort = () => controller.abort();
+  if (signal?.aborted) throw new PostApiError('写真の取得を中止しました。');
+  signal?.addEventListener('abort', abort, { once: true });
+  const timer = setTimeout(abort, 25000);
   try {
     const response = await fetch(url, { headers, cache: 'no-store', signal: controller.signal });
     if (!response.ok) throw new PostApiError('写真を取得できませんでした。', response.status);
@@ -215,7 +228,10 @@ export async function getPostImage(postId: number, token: string, coordinates?: 
   } catch (error) {
     if (error instanceof PostApiError) throw error;
     throw new PostApiError('写真を取得できませんでした。通信環境を確認してください。');
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+  }
 }
 
 export async function updatePostVisibility(postId: number, token: string, isPublished: boolean): Promise<void> {

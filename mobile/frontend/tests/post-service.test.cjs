@@ -130,23 +130,28 @@ test('older posts with empty coordinates and publication status can be opened', 
   assert.deepEqual(await service.getPostById(7, 'test-token'), post);
 });
 
-test('native photo is attached as a file descriptor and detail uses the configured API', async (t) => {
-  const parts = [];
+test('photo is attached as a named multipart file and detail uses the configured API', async (t) => {
   const post = { id: 2, message: '', image: 'https://untrusted.invalid/photo', latitude: 35, longitude: 139, is_published: false, created_at: '2026-11-05T00:00:00Z' };
-  const originalFormData = globalThis.FormData;
-  t.after(() => { globalThis.FormData = originalFormData; });
-  globalThis.FormData = class { append(name, value) { parts.push([name, value]); } };
-  let calledUrl;
+  const calls = [];
   t.mock.method(globalThis, 'fetch', async (url, options) => {
-    calledUrl = url;
-    return Response.json(post, { status: options.body ? 201 : 200 });
+    calls.push({ url, options });
+    if (url === 'file:///camera.png') {
+      return new Response('camera bytes', { headers: { 'Content-Type': 'image/png' } });
+    }
+    return Response.json(post, { status: options.method === 'POST' ? 201 : 200 });
   });
   const service = await loadService('http://localhost:9999');
   await service.createPost({ image: 'file:///camera.png', imageFileName: 'camera.png', imageMimeType: 'image/png',
     latitude: 35, longitude: 139, is_published: false }, 'test-token');
-  assert.deepEqual(parts.find(([name]) => name === 'image')[1], { uri: 'file:///camera.png', name: 'camera.png', type: 'image/png' });
+
+  assert.deepEqual(calls.map(call => call.url), ['file:///camera.png', 'http://localhost:9999/api/posts/']);
+  const file = calls[1].options.body.get('image');
+  assert.equal(file.name, 'camera.png');
+  assert.equal(file.type, 'image/png');
+  assert.equal(await file.text(), 'camera bytes');
+
   const detail = await service.getPostById(2, 'test-token');
-  assert.equal(calledUrl, 'http://localhost:9999/api/posts/2/');
+  assert.equal(calls[2].url, 'http://localhost:9999/api/posts/2/');
   assert.equal(detail.image, 'http://localhost:9999/api/posts/2/image/');
 });
 
@@ -166,7 +171,7 @@ test('missing auth, invalid responses and server validation errors never report 
   await assert.rejects(service.createPost({ message: 'test', latitude: 35, longitude: 139, is_published: true }, 'test-token'), service.PostApiError);
 });
 
-test('detail and image use their own viewer coordinates and bypass cached responses', async (t) => {
+test('detail, image and thumbnail use their own viewer coordinates and bypass cached responses', async (t) => {
   const calls = [];
   const post = { id: 7, message: 'public', image: 'https://example.com/photo', latitude: 35,
     longitude: 139, is_published: true, created_at: '2026-11-05T00:00:00Z' };
@@ -186,7 +191,7 @@ test('detail and image use their own viewer coordinates and bypass cached respon
   });
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     calls.push({ url, options });
-    if (url.endsWith('image/')) {
+    if (url.endsWith('image/') || url.endsWith('thumbnail/')) {
       return options.headers['X-Viewer-Latitude'] === '36'
         ? Response.json({ detail: 'Not found' }, { status: 404 })
         : new Response('test', { headers: { 'Content-Type': 'image/jpeg' } });
@@ -201,18 +206,41 @@ test('detail and image use their own viewer coordinates and bypass cached respon
   await assert.rejects(service.getPostImage(7, 'token', { latitude: 36, longitude: 139 }),
     error => error instanceof service.PostApiError && error.status === 404);
   assert.equal(await service.getPostImage(7, 'token'), 'data:image/jpeg;base64,dGVzdA==');
+  assert.equal(await service.getPostThumbnail(7, 'token', { latitude: 35.0001, longitude: 139 }),
+    'data:image/jpeg;base64,dGVzdA==');
+  await assert.rejects(service.getPostThumbnail(7, 'token', { latitude: 36, longitude: 139 }),
+    error => error instanceof service.PostApiError && error.status === 404);
+  assert.equal(await service.getPostThumbnail(7, 'token'), 'data:image/jpeg;base64,dGVzdA==');
 
   assert.deepEqual(calls.map(({ url }) => url), [
     'http://localhost:9999/api/posts/7/', 'http://localhost:9999/api/posts/7/',
     ...Array(3).fill('http://localhost:9999/api/posts/7/image/'),
+    ...Array(3).fill('http://localhost:9999/api/posts/7/thumbnail/'),
   ]);
   assert.deepEqual(calls.map(({ options }) => options.headers['X-Viewer-Latitude']),
-    [undefined, '35', '35.0001', '36', undefined]);
+    [undefined, '35', '35.0001', '36', undefined, '35.0001', '36', undefined]);
   assert.deepEqual(calls.map(({ options }) => options.headers['X-Viewer-Longitude']),
-    [undefined, '139', '139', '139', undefined]);
+    [undefined, '139', '139', '139', undefined, '139', '139', undefined]);
   for (const { options } of calls) {
     assert.equal(options.headers.Authorization, 'Bearer token');
     assert.equal(options.headers['Cache-Control'], 'no-cache, no-store');
     assert.equal(options.cache, 'no-store');
   }
+});
+
+test('thumbnail requests can be cancelled without retrying the request', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  const controller = new AbortController();
+  const fetch = t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'http://localhost:9999/api/posts/7/thumbnail/');
+    return new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
+    });
+  });
+
+  const pending = service.getPostThumbnail(7, 'token', undefined, controller.signal);
+  controller.abort();
+  await assert.rejects(pending, service.PostApiError);
+  await assert.rejects(service.getPostThumbnail(7, 'token', undefined, controller.signal), service.PostApiError);
+  assert.equal(fetch.mock.callCount(), 1);
 });

@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
     PostListCreateAPIView, PublicPostListAPIView, PostDetailAPIView, PostImageAPIView,
-    PostReportAPIView, PostHideAPIView, PostVisibilityAPIView,
+    PostReportAPIView, PostHideAPIView, PostThumbnailAPIView, PostVisibilityAPIView,
 )
 from likes.views import PostReactionAPIView
 
@@ -12,6 +12,7 @@ urlpatterns = [
     path('<int:pk>/', PostDetailAPIView.as_view(), name='post-detail'),
     path('<int:pk>/visibility/', PostVisibilityAPIView.as_view(), name='post-visibility'),
     path('<int:pk>/image/', PostImageAPIView.as_view(), name='post-image'),
+    path('<int:pk>/thumbnail/', PostThumbnailAPIView.as_view(), name='post-thumbnail'),
     path('<int:pk>/reports/', PostReportAPIView.as_view(), name='post-report'),
     path('<int:pk>/hidden/', PostHideAPIView.as_view(), name='post-hide'),
     # reactions は likes アプリで管理するが、URLは posts と同じプレフィックス配下に置く

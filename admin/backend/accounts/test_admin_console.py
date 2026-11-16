@@ -1,6 +1,7 @@
 import io
 import tempfile
 from contextlib import closing
+from unittest.mock import patch
 
 from PIL import Image
 from django.contrib.auth import get_user_model
@@ -9,6 +10,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from posts.images import NORMALIZED_PHOTO_DIRECTORY, normalize_post_photo
 from posts.models import Post, PostReport
 from utility.models import Contact
 from .models import AdminUser, MobileUser
@@ -147,6 +149,26 @@ class AdminConsoleTests(TestCase):
         self.assertTrue(self.pending.is_admin_hidden)
         self.assertEqual(self.pending.reports.count(), 2)
         self.assertEqual(self.client.get(listing, {'visibility': 'hidden'}).context['post_page'].paginator.count, 1)
+
+    def test_admin_photo_streams_normalized_jpeg_without_reencoding(self):
+        self.sign_in()
+        photo_url = reverse('admin_side:post-photo', args=[self.pending.pk])
+        with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
+            with io.BytesIO() as source, Image.new('RGB', (5, 5), 'white') as photo:
+                photo.save(source, 'PNG')
+                upload = SimpleUploadedFile('test.png', source.getvalue())
+            with normalize_post_photo(upload) as normalized:
+                expected = normalized.read()
+                filename = NORMALIZED_PHOTO_DIRECTORY + 'a' * 32 + '.jpg'
+                self.pending.image = self.pending.image.storage.save(filename, normalized)
+                self.pending.save(update_fields=['image'])
+
+            with patch('posts.images.Image.open') as opened, closing(self.client.get(photo_url)) as response:
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response['Content-Type'], 'image/jpeg')
+                self.assertIn('no-store', response['Cache-Control'])
+                self.assertEqual(b''.join(response.streaming_content), expected)
+                opened.assert_not_called()
 
     def test_admin_session_is_required_for_details_and_photos(self):
         detail = reverse('admin_side:post-detail', args=[self.pending.pk])

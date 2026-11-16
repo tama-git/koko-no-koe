@@ -1,9 +1,9 @@
-from io import BytesIO
+import logging
+import uuid
 
-from PIL import Image, ImageOps
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.db.models import Q
-from django.http import FileResponse
+from django.http import FileResponse, Http404
 from rest_framework import generics, status
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import JSONParser
@@ -12,10 +12,17 @@ from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 
 from .authentication import MobileBearerAuthentication
+from .images import (
+    NORMALIZED_PHOTO_DIRECTORY, create_post_thumbnail, delete_unreferenced_post_photo,
+    post_photo_preview, post_thumbnail_name,
+)
 from .models import HiddenPost, Post, PostReport
 from .nearby import viewer_coordinates
 from .read_access import readable_posts, visible_public_posts
 from .serializers import PostDetailSerializer, PostReportSerializer, PostSerializer
+
+
+logger = logging.getLogger(__name__)
 
 
 class PostAccess:
@@ -45,7 +52,47 @@ class PostListCreateAPIView(PostAccess, generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         # 投稿者は端末からのIDではなく、ログイン済み会員から決める。
-        serializer.save(user_id=self.request.user)
+        photo = serializer.validated_data.get('image')
+        if photo is None:
+            serializer.save(user_id=self.request.user)
+            return
+
+        storage = Post._meta.get_field('image').storage
+        attempted_names = []
+        try:
+            while True:
+                name = f'{NORMALIZED_PHOTO_DIRECTORY}{uuid.uuid4().hex}.jpg'
+                thumbnail_name = post_thumbnail_name(name)
+                if not storage.exists(name) and not storage.exists(thumbnail_name):
+                    break
+            attempted_names.append(name)
+            attempted_names[-1] = storage.save(name, photo)
+            if attempted_names[-1] != name:
+                raise OSError('Post photo filename collision')
+
+            with storage.open(name, 'rb') as source, create_post_thumbnail(source) as thumbnail:
+                attempted_names.append(thumbnail_name)
+                attempted_names[-1] = storage.save(thumbnail_name, thumbnail)
+                if attempted_names[-1] != thumbnail_name:
+                    raise OSError('Post thumbnail filename collision')
+
+            with transaction.atomic():
+                serializer.save(user_id=self.request.user, image=name)
+        except Exception as error:
+            # 保存途中に失敗した場合も、各ファイルを個別に後片付けする。
+            for attempted_name in reversed(attempted_names):
+                try:
+                    storage.delete(attempted_name)
+                except OSError:
+                    logger.error('Could not clean up a failed post photo upload.')
+            if isinstance(error, (OSError, DatabaseError)):
+                raise PostPhotoSaveError() from error
+            raise
+
+
+class PostPhotoSaveError(APIException):
+    status_code = 503
+    default_detail = '写真を保存できませんでした。時間をおいてもう一度お試しください。'
 
 
 class PublicPostListAPIView(PostAccess, generics.ListAPIView):
@@ -100,18 +147,16 @@ class PostDetailAPIView(ReadablePostAccess, generics.RetrieveDestroyAPIView):
         return super().get_queryset()
 
     def perform_destroy(self, instance):
-        image = instance.image
+        image_name = instance.image.name
         with transaction.atomic():
             deleted, _ = instance.delete()
             if not deleted:
                 raise NotFound('投稿が見つかりませんでした。')
-            # 古いデータで同じ画像を参照する投稿があれば、その画像は残す。
-            if image and not Post.objects.filter(image=image.name).exists():
-                try:
-                    image.delete(save=False)
-                except OSError as error:
-                    # ファイルを消せなければ投稿レコードを戻し、再試行できるようにする。
-                    raise PostPhotoDeletionError() from error
+            try:
+                delete_unreferenced_post_photo(image_name)
+            except OSError as error:
+                # ファイルを消せなければ投稿レコードを戻し、再試行できるようにする。
+                raise PostPhotoDeletionError() from error
 
 
 class PostVisibilityAPIView(PostAccess, generics.GenericAPIView):
@@ -181,13 +226,18 @@ class PostImageAPIView(ReadablePostAccess, generics.GenericAPIView):
         try:
             if post.user_id_id == request.user.pk:
                 return FileResponse(post.image.open('rb'), as_attachment=False)
-            # 他の会員へは撮影時の位置・機種などのメタデータを渡さない。
-            with post.image.open('rb') as source, Image.open(source) as photo:
-                with ImageOps.exif_transpose(photo).convert('RGB') as preview:
-                    preview.info.clear()
-                    output = BytesIO()
-                    preview.save(output, format='JPEG', quality=90)
-            output.seek(0)
-            return FileResponse(output, content_type='image/jpeg')
-        except (OSError, ValueError, Image.DecompressionBombError):
-            raise NotFound('写真を取得できません。')
+            return post_photo_preview(post.image)
+        except (OSError, ValueError, Http404) as error:
+            raise NotFound('写真を取得できません。') from error
+
+
+class PostThumbnailAPIView(ReadablePostAccess, generics.GenericAPIView):
+    def get(self, request, *args, **kwargs):
+        image = self.get_object().image
+        name = post_thumbnail_name(image.name)
+        if not name:
+            raise NotFound('サムネイルがありません。')
+        try:
+            return FileResponse(image.storage.open(name, 'rb'), content_type='image/jpeg')
+        except FileNotFoundError as error:
+            raise NotFound('サムネイルがありません。') from error
