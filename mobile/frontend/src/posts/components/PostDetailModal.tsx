@@ -2,7 +2,13 @@ import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-na
 import { PostDetailScreen } from '../screens/PostDetailScreen';
 
 type Props = { onClose: () => void } & (
-  | { postId: number; token: string; onHidden?: () => void }
+  | {
+      postId: number;
+      token: string;
+      onHidden?: () => void;
+      onDeleted?: () => void;
+      onVisibilityChanged?: () => void;
+    }
   | { distanceMeters: number | null }
 );
 
@@ -28,7 +34,8 @@ export function PostDetailModal(props: Props) {
         </SafeAreaView>
       ) : (
         <PostDetailScreen token={props.token} route={{ params: { postId: props.postId } }}
-          navigation={{ goBack: onClose }} onHidden={props.onHidden ?? onClose} />
+          navigation={{ goBack: onClose }} onHidden={props.onHidden ?? onClose}
+          onDeleted={props.onDeleted} onVisibilityChanged={props.onVisibilityChanged} />
       )}
     </Modal>
   );
