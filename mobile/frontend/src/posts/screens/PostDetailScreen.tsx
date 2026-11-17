@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView } from 'react-native';
+import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, Modal } from 'react-native';
 import { deletePost, getPostById, getPostImage, PostApiError, hidePostApi, updatePostVisibility } from '../postService';
 import type { SavedPost } from '../postService';
 import { getCurrentLocation } from '../../location/getCurrentLocation';
 import { PostVisibilityOptions } from '../components/PostVisibilityOptions';
-import { PostLocationMap } from '../../map/components/PostLocationMap';
 import { ReportScreen } from '../../reports/screens/ReportScreen';
 import { ReactionBar } from '../../likes/components/ReactionBar';
 
@@ -29,16 +28,18 @@ function readErrorMessage(reason: unknown, fallback: string) {
 /**
  * 投稿データの型定義
  */
-export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden, onVisibilityChanged }: {
+export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden, onVisibilityChanged, embedded = false }: {
   route: { params: { postId: number } };
   navigation: { goBack: () => void };
   token: string;
   onDeleted?: () => void;
   onHidden?: () => void;
   onVisibilityChanged?: () => void;
+  embedded?: boolean;
 }) {
   // 一覧画面から渡された投稿IDを受け取る
   const { postId } = route.params;
+  const Container = embedded ? View : SafeAreaView;
 
   const [post, setPost] = useState<SavedPost | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -229,30 +230,36 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   // 読み込み中のインジケーター表示
   if (loading) {
     return (
-      <SafeAreaView style={styles.loaderContainer}>
+      <Container style={styles.loaderContainer}>
         <ActivityIndicator size="large" color="#2C6049" />
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.backButtonText}>戻る</Text></TouchableOpacity>
-      </SafeAreaView>
+        {!embedded && <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.backButtonText}>戻る</Text></TouchableOpacity>}
+      </Container>
     );
   }
 
   // データが見つからない場合
   if (!post) {
     return (
-      <SafeAreaView style={styles.loaderContainer}>
-        <Text style={styles.errorText}>{error || '投稿が見つかりませんでした。'}</Text>
-        <TouchableOpacity onPress={() => setRevision(value => value + 1)} style={styles.backButton}><Text style={styles.backButtonText}>再取得</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.backButtonText}>戻る</Text></TouchableOpacity>
-      </SafeAreaView>
+      <Container style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.loaderContainer}>
+          <Text style={styles.errorText}>{error || '投稿が見つかりませんでした。'}</Text>
+          <TouchableOpacity onPress={() => setRevision(value => value + 1)} style={styles.backButton}><Text style={styles.backButtonText}>再取得</Text></TouchableOpacity>
+          {!embedded && <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.backButtonText}>戻る</Text></TouchableOpacity>}
+        </ScrollView>
+      </Container>
     );
   }
 
-  if (reportOpen && post.can_report === true) {
-    return <ReportScreen postId={post.id} message={post.message} token={token} onClose={() => setReportOpen(false)} />;
-  }
+  const report = reportOpen && post.can_report === true
+    ? <ReportScreen postId={post.id} message={post.message} token={token} onClose={() => setReportOpen(false)} />
+    : null;
+  if (report && !embedded) return report;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <Container style={styles.safeArea}>
+      {report && <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setReportOpen(false)}>
+        {report}
+      </Modal>}
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.content}>
           
@@ -311,7 +318,6 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
             <View style={styles.locationContainer}>
               <Text style={styles.locationTitle}>投稿場所</Text>
               {post.latitude !== null && post.longitude !== null ? <>
-                <PostLocationMap coordinate={{ latitude: post.latitude, longitude: post.longitude }} />
                 <Text style={styles.locationText}>緯度: {post.latitude.toFixed(4)}</Text>
                 <Text style={styles.locationText}>経度: {post.longitude.toFixed(4)}</Text>
               </> : <Text style={styles.locationText}>位置情報なし</Text>}
@@ -319,15 +325,15 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
 
           </View>
 
-          {/* 前の画面に戻るボタン */}
-          <TouchableOpacity 
+          {/* 単独表示時は画面内に戻るボタンを出し、シート内では固定ヘッダーを使う。 */}
+          {!embedded && <TouchableOpacity
             style={styles.backButton} 
             onPress={() => navigation.goBack()}
             disabled={deleting || savingVisibility}
             activeOpacity={0.8}
           >
             <Text style={styles.backButtonText}>戻る</Text>
-          </TouchableOpacity>
+          </TouchableOpacity>}
           {onDeleted && (
             <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: deleting || savingVisibility, busy: deleting }}
               style={styles.deleteButton} disabled={deleting || savingVisibility} onPress={confirmDeletion}>
@@ -337,7 +343,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
 
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </Container>
   );
 }
 
@@ -350,7 +356,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F7F9F7',
   },
   loaderContainer: {
-    flex: 1,
+    flexGrow: 1,
+    padding: 16,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#F7F9F7',

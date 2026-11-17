@@ -8,6 +8,10 @@ export type MapSnapshot = {
   pins: (MapPoint & { id: number; nearby: boolean })[];
 };
 
+const POST_PIN_BOUNCE_MS = 500;
+const POST_PIN_CLUSTER_MAX_ZOOM = 16;
+const POST_PIN_FOCUS_ZOOM = POST_PIN_CLUSTER_MAX_ZOOM + 1;
+
 // 固定バージョンとハッシュで、WebView内で実行する配信ファイルを限定する。
 export const openFreeMapDocument = `<!doctype html>
 <html lang="ja">
@@ -29,6 +33,21 @@ export const openFreeMapDocument = `<!doctype html>
       width: 112px; height: 112px; transition: transform 160ms cubic-bezier(.22, .61, .36, 1); }
     .current-dot::after { content: ''; position: absolute; inset: 0; border: 2px solid white;
       border-radius: 50%; background: #147df1; box-shadow: 0 0 0 2px #147df14a; }
+    .post-pin > svg { transform-origin: 50% 85%; }
+    .post-pin-selected { z-index: 1; }
+    .post-pin-arrived > svg { transform: scale(1.2); }
+    .post-pin-bounce > svg {
+      animation: post-pin-bounce ${POST_PIN_BOUNCE_MS}ms ease-out var(--post-pin-delay, 0ms) both;
+    }
+    @keyframes post-pin-bounce {
+      0% { transform: translateY(0) scale(var(--post-pin-bounce-scale, 1)); }
+      36% { transform: translateY(-9px) scale(var(--post-pin-bounce-scale, 1)); }
+      68% { transform: translateY(0) scale(var(--post-pin-bounce-scale, 1)); }
+      100% { transform: translateY(0) scale(1.2); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .post-pin-bounce > svg { animation: none; }
+    }
     .cluster-marker {
       background: #2C6049;
       color: #ffffff;
@@ -74,6 +93,12 @@ export const openFreeMapDocument = `<!doctype html>
   // クラスタリング管理用の変数
   let clusterIndex = null;
   const activeMarkers = [];
+  const activePostPins = new Map();
+  const postPinCoordinates = new Map();
+  let selectedPostPinId = null;
+  let pinBounceStartedAt = null;
+  let keepPostPinScale = false;
+  let pendingPostPinCenter = null;
 
   function walkingStyle(style) {
     const poiClass = ['get', 'class'];
@@ -150,11 +175,100 @@ export const openFreeMapDocument = `<!doctype html>
     context.stroke();
   }
 
+  function applyPostPinSelection(id, marker) {
+    const element = marker.getElement();
+    const selected = id === selectedPostPinId;
+    element.classList.toggle('post-pin-selected', selected);
+    element.classList.toggle('post-pin-arrived', selected && (keepPostPinScale || pinBounceStartedAt !== null));
+    element.setAttribute('aria-pressed', String(selected));
+    const restarting = selected && element.classList.contains('post-pin-bounce');
+    element.classList.remove('post-pin-bounce');
+    if (!selected || pinBounceStartedAt === null) return;
+    if (restarting) void element.offsetWidth;
+
+    const elapsed = performance.now() - pinBounceStartedAt;
+    // 現在地更新などでピンが再描画されても、跳ねる演出を最初からやり直さない。
+    if (elapsed < ${POST_PIN_BOUNCE_MS}) {
+      element.style.setProperty('--post-pin-delay', -elapsed + 'ms');
+      element.style.setProperty('--post-pin-bounce-scale', keepPostPinScale ? '1.2' : '1');
+      element.classList.add('post-pin-bounce');
+    }
+  }
+
+  function selectPostPin(id) {
+    if (id === null && selectedPostPinId === null) return;
+
+    const previousId = selectedPostPinId;
+    const settled = pinBounceStartedAt !== null && (
+      performance.now() - pinBounceStartedAt >= ${POST_PIN_BOUNCE_MS}
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+    keepPostPinScale = id !== null && previousId === id && (keepPostPinScale || settled);
+    selectedPostPinId = id;
+    pinBounceStartedAt = null;
+    pendingPostPinCenter = null;
+    const previous = activePostPins.get(previousId);
+    if (previous && previousId !== id) applyPostPinSelection(previousId, previous);
+    const selected = activePostPins.get(id);
+    if (selected) applyPostPinSelection(id, selected);
+  }
+
+  function centerPostPin(id, bottomInset) {
+    if (id !== selectedPostPinId) return;
+    const coordinates = activePostPins.get(id)?.getLngLat() ?? postPinCoordinates.get(id);
+    if (!coordinates) return;
+
+    const inset = Math.max(0, bottomInset);
+    const visibleHeight = mapElement.clientHeight - inset;
+    if (visibleHeight < 80) return;
+
+    const target = { id, coordinates, x: mapElement.clientWidth / 2, y: visibleHeight / 2 };
+    const [dx, dy] = postPinCenterOffset(target);
+    const alreadyAtZoom = Math.abs(map.getZoom() - ${POST_PIN_FOCUS_ZOOM}) < 0.001;
+    if (alreadyAtZoom && !map.isMoving() && Math.abs(dx) < 1 && Math.abs(dy) < 1) {
+      bouncePostPin(id);
+      return;
+    }
+
+    pendingPostPinCenter = target;
+    const eventData = { postPinCenter: target };
+    if (alreadyAtZoom) {
+      map.panBy([dx, dy], { duration: 420 }, eventData);
+    } else {
+      // クラスタが個別ピンに展開する縮尺で、シート上の見える領域へ合わせる。
+      map.easeTo({ center: coordinates, zoom: ${POST_PIN_FOCUS_ZOOM}, offset: [0, -inset / 2], duration: 500 },
+        eventData);
+    }
+  }
+
+  function postPinCenterOffset(target) {
+    const point = map.project(target.coordinates);
+    return [point.x - target.x, point.y - target.y];
+  }
+
+  function bouncePostPin(id) {
+    pinBounceStartedAt = performance.now();
+    const marker = activePostPins.get(id);
+    if (marker) applyPostPinSelection(id, marker);
+  }
+
+  function finishPostPinCenter(event) {
+    const target = pendingPostPinCenter;
+    if (!target || event.postPinCenter !== target) return;
+    pendingPostPinCenter = null;
+    // 手動操作などで移動が途中で止まった場合も moveend が発生する。
+    const [dx, dy] = postPinCenterOffset(target);
+    if (Math.abs(map.getZoom() - ${POST_PIN_FOCUS_ZOOM}) < 0.001 && Math.abs(dx) < 1 && Math.abs(dy) < 1) {
+      bouncePostPin(target.id);
+    }
+  }
+
   function clearMarkers() {
     for (const marker of activeMarkers) {
       marker.remove();
     }
     activeMarkers.length = 0;
+    activePostPins.clear();
   }
 
   function updateClusterMarkers() {
@@ -204,6 +318,7 @@ export const openFreeMapDocument = `<!doctype html>
         const pinProps = cluster.properties;
         const marker = new maplibregl.Marker({ color: pinProps.nearby ? '#B43A37' : '#446C9A' });
         const element = marker.getElement();
+        element.classList.add('post-pin');
         element.setAttribute('role', 'button');
         element.setAttribute('aria-label', pinProps.nearby ? '投稿詳細を開く' : '投稿までの距離を表示');
         element.tabIndex = 0;
@@ -219,6 +334,8 @@ export const openFreeMapDocument = `<!doctype html>
 
         marker.setLngLat([longitude, latitude]).addTo(map);
         activeMarkers.push(marker);
+        activePostPins.set(pinProps.id, marker);
+        applyPostPinSelection(pinProps.id, marker);
       }
     }
   }
@@ -240,10 +357,14 @@ export const openFreeMapDocument = `<!doctype html>
     if (!clusterIndex) {
       clusterIndex = new Supercluster({
         radius: 50,
-        maxZoom: 16,
+        maxZoom: ${POST_PIN_CLUSTER_MAX_ZOOM},
       });
     }
     clusterIndex.load(points);
+    postPinCoordinates.clear();
+    for (const { properties, geometry } of points) {
+      postPinCoordinates.set(properties.id, geometry.coordinates);
+    }
     updateClusterMarkers();
   }
 
@@ -382,6 +503,16 @@ export const openFreeMapDocument = `<!doctype html>
       send({ type: 'heading-applied', requestId });
       return;
     }
+    if (command?.type === 'select-post-pin') {
+      if (command.id === null || Number.isSafeInteger(command.id)) selectPostPin(command.id);
+      return;
+    }
+    if (command?.type === 'center-post-pin') {
+      if (Number.isSafeInteger(command.id) && Number.isFinite(command.bottomInset)) {
+        centerPostPin(command.id, command.bottomInset);
+      }
+      return;
+    }
     if (command?.type !== 'snapshot' || !Array.isArray(command.snapshot?.pins)) return;
     if (!Number.isSafeInteger(command.requestId) || command.requestId < latestRequestId) return;
     latestRequestId = command.requestId;
@@ -418,6 +549,7 @@ export const openFreeMapDocument = `<!doctype html>
       mapElement.insertBefore(mask, map.getCanvasContainer().nextSibling);
       map.on('move', drawRange);
       map.on('moveend', updateClusterMarkers);
+      map.on('moveend', finishPostPinCenter);
       map.on('resize', () => {
         drawRange();
         updateClusterMarkers();
