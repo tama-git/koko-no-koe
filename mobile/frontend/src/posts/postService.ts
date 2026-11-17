@@ -148,7 +148,12 @@ export async function loadPublicPosts(token: string, viewerCoordinates?: ViewerC
         !Number.isFinite(pin.longitude) || Math.abs(pin.longitude) > 180) {
       throw new PostApiError('地図の投稿位置を確認できませんでした。');
     }
-    return { id: pin.id, latitude: pin.latitude, longitude: pin.longitude };
+    return {
+      id: pin.id,
+      latitude: pin.latitude,
+      longitude: pin.longitude,
+      ...(typeof pin.isOwn === 'boolean' ? { isOwn: pin.isOwn } : {}),
+    };
   });
   return { pins, posts: data.posts.map(parsePost) };
 }

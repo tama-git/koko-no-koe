@@ -19,7 +19,7 @@ function formatPostDate(value: string) {
 }
 
 export function PostListCard({ post, onSelectPost, scope, token, coordinates, viewportHeight, scrollY }: {
-  post: SavedPost & { is_own?: boolean; isOwn?: boolean };
+  post: SavedPost;
   onSelectPost: (id: number) => void;
   scope: PostListScope;
   token: string;
@@ -34,9 +34,7 @@ export function PostListCard({ post, onSelectPost, scope, token, coordinates, vi
   const nearViewport = viewportHeight > 0 && layout !== undefined
     && layout.y + layout.height > scrollY && layout.y < scrollY + viewportHeight + THUMBNAIL_LOOKAHEAD;
   const isOwnList = scope === 'own';
-  
-  // マイページ（自分の投稿一覧）にいる場合、または投稿データ自体に is_own / isOwn がある場合に自分の投稿と判定
-  const isOwnPost = isOwnList || Boolean((post as any).is_own ?? (post as any).isOwn);
+  const isOwnPost = isOwnList || post.is_own === true;
 
   const canReadThumbnail = isOwnList || coordinates !== undefined;
   const latestCoordinates = useRef(coordinates);
@@ -67,13 +65,14 @@ export function PostListCard({ post, onSelectPost, scope, token, coordinates, vi
   const visibility = post.is_admin_hidden === true ? '管理者により非表示' : post.is_published ? '公開' : '非公開';
   const metadata = [isOwnList ? visibility : '', formatPostDate(post.created_at)].filter(Boolean).join(' ・ ');
 
-  return <Pressable accessibilityRole="button" onPress={() => onSelectPost(post.id)} 
+  return <Pressable accessibilityRole="button" onPress={() => onSelectPost(post.id)}
     style={[styles.post, isOwnPost && styles.ownPost]}
     onLayout={event => setLayout(event.nativeEvent.layout)}>
     <View style={uri ? styles.photoRow : undefined}>
       {uri && <Image source={{ uri }} resizeMode="contain" style={styles.thumbnail}
         accessibilityLabel="投稿写真" onError={() => setUri(undefined)} />}
       <View style={uri ? styles.rowText : undefined}>
+        {isOwnPost && <Text style={styles.ownLabel}>自分の投稿</Text>}
         <Text numberOfLines={4} style={styles.postText}>{message || '写真の投稿'}</Text>
         {metadata ? <Text style={styles.metadata}>{metadata}</Text> : null}
       </View>
@@ -83,8 +82,8 @@ export function PostListCard({ post, onSelectPost, scope, token, coordinates, vi
 
 const styles = StyleSheet.create({
   post: { padding: 14, backgroundColor: '#F4F6F4', borderRadius: 12, marginBottom: 12 },
-  // 自分の投稿カードの背景色（薄い緑色系）
-  ownPost: { backgroundColor: '#E8F5E9' },
+  ownPost: { backgroundColor: '#E8F5E9', borderLeftWidth: 3, borderLeftColor: '#1B8553' },
+  ownLabel: { color: '#176141', fontSize: 12, fontWeight: '700', marginBottom: 4 },
   photoRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   thumbnail: { width: 96, height: 96, borderRadius: 8 },
   postText: { fontSize: 14, color: '#333333' },

@@ -23,7 +23,7 @@ class PostSerializer(serializers.ModelSerializer):
     def get_is_own(self, obj):
         request = self.context.get('request')
         if request is not None and request.user.is_authenticated:
-            return obj.user_id_id == request.user.pk or obj.user == request.user
+            return obj.user_id_id == request.user.pk
         return False
 
     def validate(self, attrs):
