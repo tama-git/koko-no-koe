@@ -5,7 +5,7 @@ export type MapPoint = { latitude: number; longitude: number };
 export type MapSnapshot = {
   current: MapPoint | null;
   displayPosition: DisplayPosition | null;
-  pins: (MapPoint & { id: number; nearby: boolean })[];
+  pins: (MapPoint & { id: number; nearby: boolean; isOwn?: boolean })[];
 };
 
 const POST_PIN_BOUNCE_MS = 500;
@@ -108,7 +108,6 @@ export const openFreeMapDocument = `<!doctype html>
       ['match', poiSubclass, ['park', 'garden', 'museum', 'zoo', 'attraction', 'place_of_worship', 'monument', 'temple', 'castle', 'memorial', 'heritage'], true, false],
     ];
     const exits = ['match', poiSubclass, ['subway_entrance', 'train_station_entrance'], true, false];
-    // 現行タイルの railway/station と、Liberty の従来の rail 分類に対応する。
     const station = ['all', ['!', exits], ['any', ['==', poiClass, 'rail'],
       ['all', ['==', poiClass, 'railway'], ['match', poiSubclass, ['station', 'halt'], true, false]],
     ]];
@@ -144,7 +143,6 @@ export const openFreeMapDocument = `<!doctype html>
     context.clearRect(0, 0, width, height);
     if (!current) return;
 
-    // 円周上の座標を地球上の距離で求めて投影し、ズーム・画面移動に追従させる。
     const { latitude, longitude } = current;
     const lat = latitude * radians;
     const lon = longitude + 360 * Math.round((map.getCenter().lng - longitude) / 360);
@@ -162,7 +160,6 @@ export const openFreeMapDocument = `<!doctype html>
       for (const point of ring.slice(1)) context.lineTo(point.x, point.y);
       context.closePath();
     };
-    // 円が画面外に出ても、描画領域内の円の外側だけに色を載せる。
     context.beginPath();
     context.rect(0, 0, width, height);
     traceCircle();
@@ -187,7 +184,6 @@ export const openFreeMapDocument = `<!doctype html>
     if (restarting) void element.offsetWidth;
 
     const elapsed = performance.now() - pinBounceStartedAt;
-    // 現在地更新などでピンが再描画されても、跳ねる演出を最初からやり直さない。
     if (elapsed < ${POST_PIN_BOUNCE_MS}) {
       element.style.setProperty('--post-pin-delay', -elapsed + 'ms');
       element.style.setProperty('--post-pin-bounce-scale', keepPostPinScale ? '1.2' : '1');
@@ -235,7 +231,6 @@ export const openFreeMapDocument = `<!doctype html>
     if (alreadyAtZoom) {
       map.panBy([dx, dy], { duration: 420 }, eventData);
     } else {
-      // クラスタが個別ピンに展開する縮尺で、シート上の見える領域へ合わせる。
       map.easeTo({ center: coordinates, zoom: ${POST_PIN_FOCUS_ZOOM}, offset: [0, -inset / 2], duration: 500 },
         eventData);
     }
@@ -256,7 +251,6 @@ export const openFreeMapDocument = `<!doctype html>
     const target = pendingPostPinCenter;
     if (!target || event.postPinCenter !== target) return;
     pendingPostPinCenter = null;
-    // 手動操作などで移動が途中で止まった場合も moveend が発生する。
     const [dx, dy] = postPinCenterOffset(target);
     if (Math.abs(map.getZoom() - ${POST_PIN_FOCUS_ZOOM}) < 0.001 && Math.abs(dx) < 1 && Math.abs(dy) < 1) {
       bouncePostPin(target.id);
@@ -285,7 +279,6 @@ export const openFreeMapDocument = `<!doctype html>
       const { cluster: isCluster, point_count: pointCount } = cluster.properties;
 
       if (isCluster) {
-        // 複数のピンがまとまったクラスターマーカー
         const size = Math.min(36 + Math.floor(pointCount / 5) * 4, 56);
         const el = document.createElement('div');
         el.className = 'cluster-marker';
@@ -314,9 +307,13 @@ export const openFreeMapDocument = `<!doctype html>
           .addTo(map);
         activeMarkers.push(marker);
       } else {
-        // 個別のピンマーカー
+        // 個別のピンマーカー：ご指定の条件分岐による色分け
         const pinProps = cluster.properties;
-        const marker = new maplibregl.Marker({ color: pinProps.nearby ? '#B43A37' : '#446C9A' });
+        const marker = new maplibregl.Marker({
+          color: pinProps.nearby 
+            ? (pinProps.isOwn ? '#1B8553' : '#B43A37') 
+            : '#446C9A',
+        });
         const element = marker.getElement();
         element.classList.add('post-pin');
         element.setAttribute('role', 'button');
@@ -347,6 +344,7 @@ export const openFreeMapDocument = `<!doctype html>
         cluster: false,
         id: pin.id,
         nearby: pin.nearby,
+        isOwn: Boolean(pin.isOwn),
       },
       geometry: {
         type: 'Point',
@@ -370,7 +368,6 @@ export const openFreeMapDocument = `<!doctype html>
 
   function recenterMap(bottomInset = 0) {
     if (!current) return;
-    // シートに隠れる領域を除いた地図の中央に現在地を置く。
     const inset = Math.min(Math.max(0, bottomInset), mapElement.clientHeight);
     map.flyTo({ center: [current.longitude, current.latitude], zoom: 16, duration: 750, offset: [0, -inset / 2] });
   }
@@ -389,7 +386,6 @@ export const openFreeMapDocument = `<!doctype html>
     if (degrees === null || headingAngle === null) {
       headingAngle = degrees;
     } else {
-      // 359度と1度の間は、北をまたぐ短い経路で回す。
       const delta = ((degrees - headingAngle) % 360 + 540) % 360 - 180;
       headingAngle += delta;
     }
@@ -404,7 +400,6 @@ export const openFreeMapDocument = `<!doctype html>
 
   function animatePosition(point) {
     cancelPositionAnimation();
-    // 測位が続いても、画面に出ている位置から次の座標へ移動する。
     const start = displayedPosition;
     const startedAt = performance.now();
     const longitudeDelta = ((point.longitude - start.longitude + 540) % 360) - 180;
@@ -429,7 +424,6 @@ export const openFreeMapDocument = `<!doctype html>
         const dot = document.createElement('div');
         dot.className = 'current-dot';
         dot.setAttribute('aria-label', '現在地');
-        // 扇形は青い点の子要素にし、MapLibreの位置更新を共有する。
         dot.innerHTML = '<div class="current-bearing" hidden aria-hidden="true">' +
           '<svg class="current-cone" viewBox="0 0 112 112">' +
           '<defs><radialGradient id="heading-fade" cx="56" cy="56" r="56" gradientUnits="userSpaceOnUse">' +
@@ -485,7 +479,6 @@ export const openFreeMapDocument = `<!doctype html>
       try { recenterMap(command.bottomInset); } catch { send({ type: 'recenter-failed' }); }
       return;
     }
-    // 北向きにリセットするコマンド
     if (command?.type === 'reset-bearing') {
       if (map) {
         try { map.easeTo({ bearing: 0, duration: 300 }); } catch {}
@@ -527,7 +520,6 @@ export const openFreeMapDocument = `<!doctype html>
     window.receiveKokoMapCommand(command);
   }
 
-  // react-native-webview は iOS では window、Android では document に送る。
   window.addEventListener('message', event => {
     if (event.target === window) receiveCommand(event);
   });
@@ -554,7 +546,6 @@ export const openFreeMapDocument = `<!doctype html>
         drawRange();
         updateClusterMarkers();
       });
-      // 地図の回転を検知してアプリ側に現在の角度を送信
       map.on('rotate', () => {
         send({ type: 'bearing-change', bearing: map.getBearing() });
       });
@@ -581,7 +572,6 @@ export const openFreeMapDocument = `<!doctype html>
 </body>
 </html>`;
 
-// 初回描画はネイティブからの実行コマンドが届く前でも行えるようにする。
 export function createOpenFreeMapDocument(snapshot: MapSnapshot, heading: number | null = null): string {
   const json = JSON.stringify({ ...snapshot, heading }).replace(/</g, '\\u003c');
   return openFreeMapDocument.replace(

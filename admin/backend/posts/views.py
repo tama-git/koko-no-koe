@@ -108,10 +108,18 @@ class PublicPostListAPIView(PostAccess, generics.ListAPIView):
         visible = visible_public_posts(queryset, viewer).filter(
             latitude__range=(-90, 90), longitude__range=(-180, 180),
         )
+        
+        # ピンに isOwn（ログインユーザーの投稿かどうか）を持たせるように修正
         pins = [
-            {'id': post_id, 'latitude': float(latitude), 'longitude': float(longitude)}
-            for post_id, latitude, longitude in visible.values_list('pk', 'latitude', 'longitude')
+            {
+                'id': post_id, 
+                'latitude': float(latitude), 
+                'longitude': float(longitude),
+                'isOwn': post_user_id == request.user.pk
+            }
+            for post_id, latitude, longitude, post_user_id in visible.values_list('pk', 'latitude', 'longitude', 'user_id')
         ]
+        
         posts = readable_posts(queryset, viewer, coordinates, include_owned=False)
         return Response({'pins': pins, 'posts': self.get_serializer(posts, many=True).data})
 

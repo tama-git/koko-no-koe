@@ -12,9 +12,15 @@ export type SavedPost = {
   is_admin_hidden?: boolean;
   created_at: string;
   can_report?: boolean;
+  is_own?: boolean;
 };
 
-export type PostPin = { id: number; latitude: number; longitude: number };
+export type PostPin = { 
+  id: number; 
+  latitude: number; 
+  longitude: number; 
+  isOwn?: boolean;
+};
 type PublicPosts = { pins: PostPin[]; posts: SavedPost[] };
 
 export class PostApiError extends Error {
