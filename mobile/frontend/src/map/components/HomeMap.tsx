@@ -73,8 +73,11 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
   const latitude = coordinates?.latitude ?? null;
   const longitude = coordinates?.longitude ?? null;
   
-  const pins = useMemo(() => (postPins ?? []).map(pin => ({ ...pin, nearby: nearbyPostIds.has(pin.id) })),
-    [postPins, nearbyPostIds]);
+  const pins = useMemo(() => (postPins ?? []).map(pin => ({
+    ...pin,
+    nearby: nearbyPostIds.has(pin.id),
+    isOwn: Boolean((pin as any).isOwn ?? (pin as any).is_own),
+  })), [postPins, nearbyPostIds]);
 
   const snapshot: MapSnapshot = useMemo(() => ({
     current: latitude !== null && longitude !== null ? { latitude, longitude } : null,

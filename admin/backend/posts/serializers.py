@@ -13,11 +13,18 @@ class PostSerializer(serializers.ModelSerializer):
     message = serializers.CharField(required=False, allow_blank=True, default='')
     image = serializers.FileField(required=False, allow_null=True)
     is_admin_hidden = serializers.BooleanField(read_only=True)
-
+    is_own = serializers.SerializerMethodField()
+    
     class Meta:
         model = Post
-        fields = ('id', 'message', 'image', 'latitude', 'longitude', 'is_published', 'is_admin_hidden', 'created_at')
+        fields = ('id', 'message', 'image', 'latitude', 'longitude', 'is_published', 'is_admin_hidden', 'created_at', 'is_own')
         read_only_fields = ('id', 'created_at')
+
+    def get_is_own(self, obj):
+        request = self.context.get('request')
+        if request is not None and request.user.is_authenticated:
+            return obj.user_id_id == request.user.pk or obj.user == request.user
+        return False
 
     def validate(self, attrs):
         request = self.context.get('request')
