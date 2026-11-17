@@ -42,7 +42,11 @@ test('existing list and create endpoints and form fields are preserved', async (
 test('public feed sends viewer coordinates when supplied and returns pins separately', async (t) => {
   const service = await loadService('http://localhost:9999');
   const post = { id: 7, message: 'public', image: null, latitude: 35, longitude: 139, is_published: true, created_at: '2026-11-05T00:00:00Z' };
-  const pins = [{ id: 7, latitude: 35, longitude: 139 }, { id: 8, latitude: 36, longitude: 139 }];
+  const pins = [
+    { id: 7, latitude: 35, longitude: 139, isOwn: true },
+    { id: 8, latitude: 36, longitude: 139, isOwn: false },
+    { id: 9, latitude: 37, longitude: 139 },
+  ];
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(url, 'http://localhost:9999/api/posts/public/');
     assert.equal(options.method, 'GET');
@@ -52,10 +56,11 @@ test('public feed sends viewer coordinates when supplied and returns pins separa
     const latitude = options.headers['X-Viewer-Latitude'];
     const longitude = options.headers['X-Viewer-Longitude'];
     assert.deepEqual([latitude, longitude], latitude === undefined ? [undefined, undefined] : ['35', '139']);
-    return Response.json({ pins, posts: latitude === undefined ? [] : [post] });
+    return Response.json({ pins, posts: latitude === undefined ? [] : [{ ...post, is_own: true }] });
   });
   assert.deepEqual(await service.loadPublicPosts('test-token'), { pins, posts: [] });
-  assert.deepEqual(await service.loadPublicPosts('test-token', { latitude: 35, longitude: 139 }), { pins, posts: [post] });
+  assert.deepEqual(await service.loadPublicPosts('test-token', { latitude: 35, longitude: 139 }),
+    { pins, posts: [{ ...post, is_own: true }] });
 });
 
 test('visibility update sends a JSON boolean and checks the saved setting', async (t) => {

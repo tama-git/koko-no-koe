@@ -307,17 +307,17 @@ export const openFreeMapDocument = `<!doctype html>
           .addTo(map);
         activeMarkers.push(marker);
       } else {
-        // 個別のピンマーカー：ご指定の条件分岐による色分け
         const pinProps = cluster.properties;
         const marker = new maplibregl.Marker({
-          color: pinProps.nearby 
-            ? (pinProps.isOwn ? '#1B8553' : '#B43A37') 
-            : '#446C9A',
+          color: pinProps.isOwn
+            ? (pinProps.nearby ? '#1B8553' : '#51745F')
+            : (pinProps.nearby ? '#B43A37' : '#446C9A'),
         });
         const element = marker.getElement();
         element.classList.add('post-pin');
         element.setAttribute('role', 'button');
-        element.setAttribute('aria-label', pinProps.nearby ? '投稿詳細を開く' : '投稿までの距離を表示');
+        const label = pinProps.nearby ? '投稿詳細を開く' : '投稿までの距離を表示';
+        element.setAttribute('aria-label', pinProps.isOwn ? '自分の投稿：' + label : label);
         element.tabIndex = 0;
 
         const select = () => send({ type: 'pin', id: pinProps.id });

@@ -61,6 +61,7 @@ class PostApiTests(TestCase):
         self.assertEqual(post.user_id, self.owner)
         self.assertTrue(post.is_public)
         self.assertNotIn('user_id', response.data)
+        self.assertIs(response.data['is_own'], True)
         self.assertIsInstance(response.json()['latitude'], float)
         self.assertEqual(self.client.get('/api/posts/').json()[0]['id'], post.pk)
         detail = self.client.get(f'/api/posts/{post.pk}/')
@@ -89,7 +90,8 @@ class PostApiTests(TestCase):
         data = public.json()
         self.assertEqual(data['posts'], [])
         self.assertEqual([pin['id'] for pin in data['pins']], [latest, first])
-        self.assertTrue(all(set(pin) == {'id', 'latitude', 'longitude'} for pin in data['pins']))
+        self.assertTrue(all(set(pin) == {'id', 'latitude', 'longitude', 'isOwn'} for pin in data['pins']))
+        self.assertTrue(all(pin['isOwn'] is False for pin in data['pins']))
         for headers in (
             {'HTTP_X_VIEWER_LATITUDE': '35'},
             {'HTTP_X_VIEWER_LATITUDE': 'NaN', 'HTTP_X_VIEWER_LONGITUDE': '139'},
@@ -104,6 +106,7 @@ class PostApiTests(TestCase):
                                  HTTP_X_VIEWER_LONGITUDE='151.2094')
         self.assertEqual(detail.status_code, 200)
         self.assertNotIn('user_id', detail.json())
+        self.assertIs(detail.json()['is_own'], False)
         self.assertEqual(self.client.get(f'/api/posts/{unset_id}/').status_code, 404)
         self.assertEqual(self.client.post('/api/posts/public/', self.payload(), format='json').status_code, 405)
 
@@ -132,11 +135,11 @@ class PostApiTests(TestCase):
         self.assertEqual(response['Cache-Control'], 'private, no-store')
         self.assertEqual(response.json(), {
             'pins': [
-                {'id': own_far.pk, 'latitude': -1, 'longitude': 0},
-                {'id': far['id'], 'latitude': -0.01, 'longitude': 0},
-                {'id': boundary['id'], 'latitude': 0, 'longitude': 0},
+                {'id': own_far.pk, 'latitude': -1, 'longitude': 0, 'isOwn': True},
+                {'id': far['id'], 'latitude': -0.01, 'longitude': 0, 'isOwn': False},
+                {'id': boundary['id'], 'latitude': 0, 'longitude': 0, 'isOwn': False},
             ],
-            'posts': [boundary],
+            'posts': [boundary | {'is_own': False}],
         })
         self.assertNotContains(response, 'far text')
         self.assertNotContains(response, f"/{far['id']}/image/")
