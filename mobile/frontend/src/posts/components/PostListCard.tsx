@@ -3,20 +3,12 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { LayoutRectangle } from 'react-native';
 
 import { getPostThumbnail } from '../postService';
+import { formatPostDate } from '../formatPostDate';
 import type { SavedPost, ViewerCoordinates } from '../postService';
 import type { PostListScope } from '../usePostList';
 
 const THUMBNAIL_LOOKAHEAD = 120;
 const THUMBNAIL_SCROLL_DELAY_MS = 120;
-
-function formatPostDate(value: string) {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '';
-
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${hours}:${minutes}`;
-}
 
 export function PostListCard({ post, onSelectPost, scope, token, coordinates, viewportHeight, scrollY }: {
   post: SavedPost;

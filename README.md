@@ -33,6 +33,26 @@ koko-no-koe/
 
 説明資料は [docs](docs/README.md) にまとめています。旧構成の手順書は `docs/archive/` に保管しています。通常は上の最新版を使ってください。
 
+## 投稿場所の地名表示
+
+Djangoを起動するPCで [Geoapifyの管理画面](https://myprojects.geoapify.com/) からAPIキーを取得し、起動に使うPowerShellで設定します。入力は画面に表示されず、環境変数はこのターミナルとそこから起動するDjangoに引き継がれます。
+
+```powershell
+$env:GEOAPIFY_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Geoapify APIキー' -AsSecureString)).Password
+```
+
+キーはExpoの環境変数やGitに入れないでください。この変更を使うDBには投稿アプリのマイグレーション `0005_post_place` を適用してからDjangoを起動します。地名が空の投稿は「この付近」と表示し、新規投稿の地名取得に失敗した理由はDjangoのログで確認できます。
+
+既存投稿の地名を補う場合は、`admin/backend` で対象件数を確認します。
+
+```powershell
+.\.venv\Scripts\python.exe manage.py backfill_post_places --settings=config.settings
+```
+
+同じコマンドに `--apply` を付けると、地名が空で有効な座標がある既存投稿（非公開・非表示を含む）の座標をGeoapifyへ送信し、取得できた地名と出典を保存します。既存投稿の座標送信が承認された範囲で実行してください。処理が中断した場合は、保存済みの地名を保持したまま再実行できます。
+
+投稿時は公開設定にかかわらず、地名取得のために投稿地点の緯度・経度をGeoapifyへ送信します。投稿確認画面でこの送信を案内します。公開に向けて、プライバシーポリシーにも利用目的・送信項目・送信先・処理地域と [Geoapifyのプライバシーポリシー](https://www.geoapify.com/privacy-policy/) を記載してください。
+
 ## 起動の早見表（Windows PowerShell）
 
 以下はリポジトリのルート（このREADMEがある場所）から実行します。コードは1行ずつ入力し、エラーが出たら次へ進まず内容を確認してください。

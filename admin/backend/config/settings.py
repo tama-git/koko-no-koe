@@ -6,6 +6,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 ADMIN_FRONTEND = BASE_DIR.parent / "frontend"
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "local-preview-only-not-for-deployment")
+GEOAPIFY_API_KEY = os.environ.get("GEOAPIFY_API_KEY", "").strip()
 DEBUG = True
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "[::1]"]
 # ローカル開発でiPhoneから接続する場合だけ、PCのIPアドレスを追加する。

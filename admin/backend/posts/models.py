@@ -51,6 +51,9 @@ class Post(models.Model):
         decimal_places=7
     )
 
+    place_name = models.CharField(max_length=100, blank=True)
+    place_attribution = models.JSONField(null=True, blank=True)
+
     # 公開ステータス
     is_public = models.BooleanField(
         verbose_name='公開ステータス',

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, Modal } from 'react-native';
+import { ActionSheetIOS, Alert, Linking, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, Modal } from 'react-native';
 import { deletePost, getPostById, getPostImage, PostApiError, hidePostApi, updatePostVisibility } from '../postService';
 import type { SavedPost } from '../postService';
+import { formatPostDate } from '../formatPostDate';
 import { getCurrentLocation } from '../../location/getCurrentLocation';
 import { PostVisibilityOptions } from '../components/PostVisibilityOptions';
 import { ReportScreen } from '../../reports/screens/ReportScreen';
@@ -254,6 +255,10 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
     ? <ReportScreen postId={post.id} message={post.message} token={token} onClose={() => setReportOpen(false)} />
     : null;
   if (report && !embedded) return report;
+  const postDate = formatPostDate(post.created_at);
+  const hasMessage = post.message.trim().length > 0;
+  const placeAttribution = post.place_name ? post.place_attribution : null;
+  const sourceUrl = placeAttribution?.url;
 
   return (
     <Container style={styles.safeArea}>
@@ -284,16 +289,25 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
             {post.is_admin_hidden === true && (
               <Text style={styles.locationText}>管理者により非表示</Text>
             )}
-            
-            {/* 投稿日時 */}
-            {post.created_at && (
-              <Text style={styles.dateText}>{post.created_at}</Text>
-            )}
 
-            {/* メッセージ本文 */}
-            <Text style={styles.messageText}>
-              {post.message ? post.message : '（メッセージなし）'}
-            </Text>
+            <View>
+              <Text style={[styles.dateText, styles.locationTitle]}>投稿場所</Text>
+              <Text style={[styles.messageText, styles.placeName]}>{post.place_name ? `${post.place_name}周辺` : 'この付近'}</Text>
+              {placeAttribution && (
+                <View style={styles.placeCredits}>
+                  <Text accessibilityRole="link" style={[styles.dateText, styles.placeCreditLink]}
+                    onPress={() => { void Linking.openURL('https://www.geoapify.com/').catch(() => {}); }}>
+                    Powered by Geoapify
+                  </Text>
+                  {sourceUrl ? (
+                    <Text accessibilityRole="link" style={[styles.dateText, styles.placeCreditLink]}
+                      onPress={() => { void Linking.openURL(sourceUrl).catch(() => {}); }}>
+                      {placeAttribution.label}
+                    </Text>
+                  ) : <Text style={styles.dateText}>{placeAttribution.label}</Text>}
+                </View>
+              )}
+            </View>
 
             {/* 写真がある場合は表示 */}
             {post.image && (imageError ? (
@@ -314,15 +328,8 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
               <ReactionBar postId={post.id} token={token} />
             )}
 
-            {/* 位置情報セクション */}
-            <View style={styles.locationContainer}>
-              <Text style={styles.locationTitle}>投稿場所</Text>
-              {post.latitude !== null && post.longitude !== null ? <>
-                <Text style={styles.locationText}>緯度: {post.latitude.toFixed(4)}</Text>
-                <Text style={styles.locationText}>経度: {post.longitude.toFixed(4)}</Text>
-              </> : <Text style={styles.locationText}>位置情報なし</Text>}
-            </View>
-
+            {hasMessage && <Text style={styles.messageText}>{post.message}</Text>}
+            {postDate ? <Text style={styles.dateText}>{postDate}</Text> : null}
           </View>
 
           {/* 単独表示時は画面内に戻るボタンを出し、シート内では固定ヘッダーを使う。 */}
@@ -390,6 +397,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 20,
+    gap: 12,
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#E2EBE0',
@@ -401,39 +409,42 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 12,
-    color: '#8CA397',
-    marginBottom: 12,
+    color: '#5C7A6B',
   },
   messageText: {
     fontSize: 16,
     color: '#1D4030',
     lineHeight: 24,
-    marginBottom: 16,
   },
   postImage: {
     width: '100%',
     height: 240,
     borderRadius: 10,
-    marginBottom: 16,
     resizeMode: 'contain',
-  },
-  locationContainer: {
-    backgroundColor: '#F3F7F4',
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#DCE6DA',
   },
   locationTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#2C6049',
     marginBottom: 4,
+  },
+  placeName: {
+    fontSize: 13,
+    lineHeight: 20,
   },
   locationText: {
     fontSize: 13,
     color: '#5C7A6B',
     marginTop: 4,
+  },
+  placeCredits: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: 8,
+    rowGap: 4,
+    marginTop: 8,
+  },
+  placeCreditLink: {
+    textDecorationLine: 'underline',
   },
   backButton: {
     height: 48,

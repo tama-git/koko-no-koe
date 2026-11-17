@@ -79,6 +79,8 @@ export function PostConfirmScreen({ route, navigation, token, onCreated }: { rou
           <Text style={styles.value}>{isPublished ? '公開' : '本人のみ公開'}</Text>
         </View>
 
+        <Text style={styles.locationNotice}>地名を表示するため、投稿時に投稿地点の緯度・経度をGeoapifyに送信します。本人のみ公開の場合も対象です。</Text>
+
         {/* 最終送信ボタン */}
         <TouchableOpacity 
           style={[styles.button, (loading || !hasPostLocation) && styles.buttonDisabled]}
@@ -113,6 +115,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: '#E2EBE0' },
   label: { fontSize: 13, fontWeight: '600', color: '#5C7A6B', marginTop: 12, marginBottom: 4 },
   value: { fontSize: 15, color: '#1D4030', lineHeight: 22 },
+  locationNotice: { fontSize: 13, color: '#5C7A6B', lineHeight: 20, marginBottom: 12 },
   previewImage: { width: '100%', height: 200, borderRadius: 8, marginTop: 4, resizeMode: 'contain' },
   button: { height: 52, backgroundColor: '#2C6049', borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   buttonDisabled: { opacity: 0.6 },
