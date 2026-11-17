@@ -1,5 +1,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Animated,
   PanResponder,
@@ -21,7 +22,7 @@ import type { PostListState } from '../../posts/usePostList';
 
 export function PostBottomSheet({
   bottomInset = 0, animatedHeight, nearbyList, ownList, token, coordinates,
-  onSelectNearbyPost, onSelectOwnPost, onOpenSettings,
+  onSelectNearbyPost, onSelectOwnPost, settingsMenu, detail, onCloseDetail,
 }: {
   bottomInset?: number;
   animatedHeight: Animated.Value;
@@ -31,10 +32,13 @@ export function PostBottomSheet({
   coordinates?: ViewerCoordinates;
   onSelectNearbyPost: (id: number) => void;
   onSelectOwnPost: (id: number) => void;
-  onOpenSettings: () => void;
+  settingsMenu: ReactNode;
+  detail: ReactNode;
+  onCloseDetail: () => void;
 }) {
   const [screenHeight, setScreenHeight] = useState(0);
   const [tab, setTab] = useState<SheetTab>('public');
+  const showingDetail = detail != null;
   const tabSwipe = useMemo(() => {
     // PanResponderは取得時にdx・dyを0へ戻すため、そこまでの移動を保存する。
     let initialDx = 0;
@@ -60,6 +64,7 @@ export function PostBottomSheet({
   }, []);
   const title = tab === 'public' ? `近くで読める声 ${nearbyList.posts.length}件`
     : tab === 'own' ? `自分の投稿 ${ownList.posts.length}件` : '設定';
+  const backLabel = tab === 'public' ? '近くで読める声に戻る' : tab === 'own' ? '自分の投稿に戻る' : '設定に戻る';
 
   const touchStartY = useRef(0);
   const dragStartHeight = useRef(0);
@@ -87,6 +92,18 @@ export function PostBottomSheet({
     currentHeight.current = height;
     animatedHeight.setValue(height);
   }, [screenHeight, animatedHeight]);
+
+  useEffect(() => {
+    if (!showingDetail || screenHeight === 0) return;
+    isDragging.current = false;
+    animatedHeight.stopAnimation();
+    currentLevel.current = 'half';
+    Animated.timing(animatedHeight, {
+      toValue: getSheetHeights(screenHeight).half,
+      duration: 250,
+      useNativeDriver: false,
+    }).start();
+  }, [showingDetail, screenHeight, animatedHeight]);
 
   const moveSheet = (pageY: number) => {
     if (!isDragging.current) return;
@@ -142,27 +159,36 @@ export function PostBottomSheet({
             <View style={styles.handle} />
           </View>
 
-          <View style={styles.page} {...tabSwipe.panHandlers}>
-            <View style={styles.header}>
-              <Text accessibilityRole="header" style={styles.title}>{title}</Text>
-              <View accessibilityRole="tablist" style={styles.tabs}>
-                {SHEET_TABS.map(({ id, label }) => (
-                  <Pressable key={id} accessibilityRole="tab" accessibilityLabel={label}
-                    accessibilityState={{ selected: tab === id }} onPress={() => setTab(id)}
-                    style={[styles.tab, tab === id && styles.selectedTab]}>
-                    <SheetTabIcon tab={id} color={tab === id ? '#1D4030' : '#53645A'} />
-                  </Pressable>
-                ))}
+          <View style={styles.page}>
+            <View style={styles.page} {...tabSwipe.panHandlers}
+              pointerEvents={showingDetail ? 'none' : 'auto'}
+              accessibilityElementsHidden={showingDetail}
+              importantForAccessibility={showingDetail ? 'no-hide-descendants' : 'auto'}>
+              <View style={styles.header}>
+                <Text accessibilityRole="header" style={styles.title}>{title}</Text>
+                <View accessibilityRole="tablist" style={styles.tabs}>
+                  {SHEET_TABS.map(({ id, label }) => (
+                    <Pressable key={id} accessibilityRole="tab" accessibilityLabel={label}
+                      accessibilityState={{ selected: tab === id }} onPress={() => setTab(id)}
+                      style={[styles.tab, tab === id && styles.selectedTab]}>
+                      <SheetTabIcon tab={id} color={tab === id ? '#1D4030' : '#53645A'} />
+                    </Pressable>
+                  ))}
+                </View>
               </View>
+              {tab === 'settings' ? settingsMenu : (
+                <PostList key={tab} scope={tab} token={token} coordinates={tab === 'public' ? coordinates : undefined}
+                  list={tab === 'public' ? nearbyList : ownList}
+                  onSelectPost={tab === 'public' ? onSelectNearbyPost : onSelectOwnPost} />
+              )}
             </View>
-            {tab === 'settings' ? (
-              <Pressable accessibilityRole="button" onPress={onOpenSettings} style={styles.settings}>
-                <Text style={styles.settingsText}>アプリの設定</Text>
-              </Pressable>
-            ) : (
-              <PostList key={tab} scope={tab} token={token} coordinates={tab === 'public' ? coordinates : undefined}
-                list={tab === 'public' ? nearbyList : ownList}
-                onSelectPost={tab === 'public' ? onSelectNearbyPost : onSelectOwnPost} />
+            {showingDetail && (
+              <View style={[StyleSheet.absoluteFill, styles.detailPage]} accessibilityViewIsModal>
+                <Pressable accessibilityRole="button" onPress={onCloseDetail} style={styles.detailBack}>
+                  <Text style={styles.detailBackText}>〈 {backLabel}</Text>
+                </Pressable>
+                {detail}
+              </View>
             )}
           </View>
         </SafeAreaView>
@@ -218,6 +244,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   page: { flex: 1 },
+  detailPage: { backgroundColor: '#FFFFFF' },
+  detailBack: { minHeight: 44, paddingHorizontal: 20, justifyContent: 'center' },
+  detailBackText: { color: '#1D4030', fontSize: 16, fontWeight: '700' },
   header: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -232,13 +261,4 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: 'row', padding: 2, borderRadius: 24, backgroundColor: '#E8EFEA', marginLeft: 'auto' },
   tab: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   selectedTab: { backgroundColor: '#FFFFFF' },
-  settings: {
-    marginHorizontal: 20,
-    minHeight: 44,
-    paddingHorizontal: 14,
-    justifyContent: 'center',
-    borderRadius: 12,
-    backgroundColor: '#F4F6F4',
-  },
-  settingsText: { fontSize: 15, fontWeight: '600', color: '#1D4030' },
 });

@@ -35,16 +35,17 @@ const mapCredits = [
   { label: '© OpenStreetMap', url: 'https://www.openstreetmap.org/copyright' },
 ];
 
-export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displayPosition, heading, controlsInset, onSelectPost, onShowDistance }: {
+export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, location, displayPosition, heading, controlsInset, onSelectPost, onShowDistance }: {
   postPins: readonly PostPin[];
   postsLoading: boolean;
   nearbyPostIds: ReadonlySet<number>;
+  selectedPin: { id: number } | null;
   location: LocationState;
   displayPosition: DisplayPosition | null;
   heading: number | null;
   controlsInset: ReturnType<typeof Animated.add>;
   onSelectPost: (id: number) => void;
-  onShowDistance: (distance: number | null) => void;
+  onShowDistance: (id: number, distance: number | null) => void;
 }) {
   const webView = useRef<WebView<WebViewProps>>(null);
   
@@ -142,6 +143,22 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
     return () => controlsInset.removeListener(listener);
   }, [controlsInset]);
 
+  useEffect(() => {
+    if (mapState !== 'ready') return;
+    const selection = JSON.stringify({ type: 'select-post-pin', id: selectedPin?.id ?? null });
+    webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${selection}); true;`);
+    if (!selectedPin) return;
+
+    // シートの移動が落ち着いてから、見えている地図の中央にピンを合わせる。
+    const timer = setTimeout(() => {
+      const focus = JSON.stringify({
+        type: 'center-post-pin', id: selectedPin.id, bottomInset: latestControlsInset.current,
+      });
+      webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${focus}); true;`);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [mapState, selectedPin]);
+
   const recenter = () => {
     const command = JSON.stringify({ type: 'recenter', bottomInset: latestControlsInset.current });
     webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${command}); true;`);
@@ -217,9 +234,9 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, location, displ
     } else if (message.type === 'pin' && Number.isSafeInteger(message.id)) {
       const pin = pins.find(pin => pin.id === message.id);
       if (!pin) return;
-      if (!coordinates) onShowDistance(null);
+      if (!coordinates) onShowDistance(pin.id, null);
       else if (pin.nearby) onSelectPost(pin.id);
-      else onShowDistance(distanceMeters(coordinates.latitude, coordinates.longitude, pin.latitude, pin.longitude));
+      else onShowDistance(pin.id, distanceMeters(coordinates.latitude, coordinates.longitude, pin.latitude, pin.longitude));
     }
   };
 

@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Animated, Modal, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, BackHandler, View } from 'react-native';
 
 import { AppScreen } from '../../shared/components/AppScreen';
 import { HomeMap } from '../../map/components/HomeMap';
@@ -8,7 +8,8 @@ import { filterNearbyPosts } from '../../map/filterNearbyPosts';
 import { PostBottomSheet } from '../components/PostBottomSheet';
 import { MessageInputBar } from '../components/MessageInputBar';
 import { PostComposerModal } from '../../posts/components/PostComposerModal';
-import { PostDetailModal } from '../../posts/components/PostDetailModal';
+import { PostDistanceNotice } from '../../posts/components/PostDetailModal';
+import { PostDetailScreen } from '../../posts/screens/PostDetailScreen';
 import { usePostList } from '../../posts/usePostList';
 import { UtilityScreen } from '../../utility/screens/UtilityScreen';
 
@@ -27,9 +28,7 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
   const sheetHeight = useRef(new Animated.Value(0)).current;
   const mapControlsInset = useMemo(() => Animated.add(sheetHeight, inputBarHeight), [sheetHeight, inputBarHeight]);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [selectedPost, setSelectedPost] = useState<{ id: number; own: boolean } | null>(null);
-  const [selectedDistance, setSelectedDistance] = useState<{ meters: number | null } | null>(null);
-  const [utilityOpen, setUtilityOpen] = useState(false);
+  const [selection, setSelection] = useState<{ id: number; own: boolean } | { id: number; distanceMeters: number | null } | null>(null);
   const { location, displayPosition, heading, retryLocation } = useCurrentLocation();
   const viewerCoordinates = location.status === 'ready' ? location.coordinates : undefined;
   const publicPosts = usePostList(token, 'public', refreshKey, viewerCoordinates);
@@ -46,42 +45,49 @@ export function HomeScreen({ token, busy, message, onLogout, user }: Props) {
     error: locationFailed ? '現在地を取得できませんでした。位置情報の設定を確認して再取得してください。' : publicPosts.error,
     refresh: locationFailed ? retryLocation : publicPosts.refresh,
   };
-  const selectNearbyPost = useCallback((id: number) => setSelectedPost({ id, own: false }), []);
-  const selectOwnPost = (id: number) => setSelectedPost({ id, own: true });
+  const selectNearbyPost = useCallback((id: number) => setSelection({ id, own: false }), []);
+  const selectOwnPost = (id: number) => setSelection({ id, own: true });
+  const showDistance = useCallback((id: number, distanceMeters: number | null) => setSelection({ id, distanceMeters }), []);
   const refreshPosts = () => setRefreshKey(value => value + 1);
-  const closePost = () => {
-    setSelectedPost(null);
+  const closeDetail = () => setSelection(null);
+  const finishPostChange = () => {
+    setSelection(current => current === selection ? null : current);
     refreshPosts();
   };
-  const closeUtility = () => setUtilityOpen(false);
+  const showingDetail = selection !== null;
+
+  useEffect(() => {
+    if (!showingDetail) return;
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      setSelection(null);
+      return true;
+    });
+    return () => back.remove();
+  }, [showingDetail]);
+
+  const detail = !selection ? null : 'own' in selection ? (
+    <PostDetailScreen key={selection.id} route={{ params: { postId: selection.id } }} token={token}
+      navigation={{ goBack: closeDetail }} embedded onHidden={finishPostChange}
+      onDeleted={selection.own ? finishPostChange : undefined}
+      onVisibilityChanged={selection.own ? refreshPosts : undefined} />
+  ) : <PostDistanceNotice distanceMeters={selection.distanceMeters} />;
   return (
     <AppScreen edgeToEdge>
       <View style={{ flex: 1 }}>
 
         {/* 地図を画面全体に置き、シートの高さは操作ボタンと出典の位置だけに使う。 */}
         <HomeMap postPins={publicPosts.pins} postsLoading={publicPosts.loading} nearbyPostIds={nearbyPostIds}
+          selectedPin={selection}
           location={location} displayPosition={displayPosition} heading={heading} controlsInset={mapControlsInset} onSelectPost={selectNearbyPost}
-          onShowDistance={meters => setSelectedDistance({ meters })} />
+          onShowDistance={showDistance} />
         <PostBottomSheet bottomInset={inputBarHeight} animatedHeight={sheetHeight}
           nearbyList={nearbyList} ownList={ownPosts} token={token} coordinates={viewerCoordinates}
-          onSelectNearbyPost={selectNearbyPost} onSelectOwnPost={selectOwnPost} onOpenSettings={() => setUtilityOpen(true)} />
+          detail={detail} onCloseDetail={closeDetail}
+          onSelectNearbyPost={selectNearbyPost} onSelectOwnPost={selectOwnPost}
+          settingsMenu={<UtilityScreen token={token} onLogout={onLogout} user={user} />} />
         <MessageInputBar disabled={busy} onPress={() => setComposerOpen(true)}
           onLayout={event => setInputBarHeight(event.nativeEvent.layout.height)} />
         {composerOpen && <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setComposerOpen(false)} />}
-        {selectedPost !== null && (
-          <PostDetailModal postId={selectedPost.id} token={token} onClose={closePost} onHidden={closePost}
-            onDeleted={selectedPost.own ? closePost : undefined}
-            onVisibilityChanged={selectedPost.own ? refreshPosts : undefined} />
-        )}
-        {selectedDistance !== null && (
-          <PostDetailModal distanceMeters={selectedDistance.meters} onClose={() => setSelectedDistance(null)} />
-        )}
-        {utilityOpen && (
-          <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeUtility}>
-            <UtilityScreen onClose={closeUtility} token={token} onLogout={onLogout} user={user} />
-          </Modal>
-        )}
-
       </View>
     </AppScreen>
   );

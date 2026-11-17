@@ -1,4 +1,4 @@
-import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PostDetailScreen } from '../screens/PostDetailScreen';
 
 type Props = { onClose: () => void } & (
@@ -20,13 +20,7 @@ export function PostDetailModal(props: Props) {
         <SafeAreaView style={styles.screen}>
           <View style={styles.content}>
             <Text accessibilityRole="header" style={styles.title}>投稿詳細</Text>
-            <View style={styles.card}>
-              <Text style={styles.label}>{props.distanceMeters === null ? '距離を表示できません' : '範囲外の投稿'}</Text>
-              <Text style={styles.distance}>{props.distanceMeters === null
-                ? '現在地の取得後に距離を確認できます。'
-                : `現在地から約 ${(props.distanceMeters / 1000).toFixed(2)} km`}</Text>
-              {props.distanceMeters !== null && <Text>この場所に近づくと閲覧できます。</Text>}
-            </View>
+            <DistanceCard distanceMeters={props.distanceMeters} />
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.back}>
               <Text style={styles.backText}>戻る</Text>
             </Pressable>
@@ -39,6 +33,20 @@ export function PostDetailModal(props: Props) {
       )}
     </Modal>
   );
+}
+
+function DistanceCard({ distanceMeters }: { distanceMeters: number | null }) {
+  return <View style={styles.card}>
+    <Text style={styles.label}>{distanceMeters === null ? '距離を表示できません' : '範囲外の投稿'}</Text>
+    <Text style={styles.distance}>{distanceMeters === null
+      ? '現在地の取得後に距離を確認できます。'
+      : `現在地から約 ${(distanceMeters / 1000).toFixed(2)} km`}</Text>
+    {distanceMeters !== null && <Text>この場所に近づくと閲覧できます。</Text>}
+  </View>;
+}
+
+export function PostDistanceNotice({ distanceMeters }: { distanceMeters: number | null }) {
+  return <ScrollView contentContainerStyle={styles.content}><DistanceCard distanceMeters={distanceMeters} /></ScrollView>;
 }
 
 const styles = StyleSheet.create({

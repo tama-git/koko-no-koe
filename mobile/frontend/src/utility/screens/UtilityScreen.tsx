@@ -1,63 +1,20 @@
-// ユーティリティメニュー画面。
-// メニュー項目を押すと対応する画面に切り替わる（screen ステートで管理）。
-
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View, Alert } from 'react-native';
-import { AppScreen } from '../../shared/components/AppScreen';
+import { useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ChangePasswordScreen } from './ChangePasswordScreen';
 import { DeleteAccountScreen } from './DeleteAccountScreen';
 import { HelpScreen } from './HelpScreen';
-import { ContactScreen } from './ContactScreen'; 
+import { ContactScreen } from './ContactScreen';
 
-type Props = { 
-  onClose: () => void;
-  onLogout: () => Promise<void>; 
-  token?: string; 
+type Props = {
+  onLogout: () => Promise<void>;
+  token: string;
   user: { name: string; email: string };
 };
 
-export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
-  const [screen, setScreen] = useState<'menu' | 'changePassword' | 'deleteAccount' | 'help' | 'contact'>('menu');
-  // パスワード変更画面に切り替え
-  if (screen === 'changePassword') {
-    return (
-      <ChangePasswordScreen
-        token={token ?? ''}
-        onClose={() => setScreen('menu')}
-      />
-    );
-  }
-
-  // 退会画面に切り替え
-  if (screen === 'deleteAccount') {
-    return (
-      <DeleteAccountScreen
-        token={token ?? ''}
-        onClose={() => setScreen('menu')}
-        onDeleted={onLogout}
-      />
-    );
-  }
-
-  // ヘルプ画面に切り替え
-  if (screen === 'help') {
-    return (
-      <HelpScreen
-        token={token ?? ''}
-        onClose={() => setScreen('menu')} // メニューに戻る
-      />
-    );
-  }
-
-  // 問い合わせ画面に切り替え
-  if (screen === 'contact') {
-    return (
-      <ContactScreen
-        token={token ?? ''}
-        onClose={() => setScreen('menu')} // メニューに戻る
-      />
-    );
-  }
+export function UtilityScreen({ onLogout, token, user }: Props) {
+  const [screen, setScreen] = useState<'changePassword' | 'deleteAccount' | 'help' | 'contact' | null>(null);
+  const closeScreen = () => setScreen(null);
+  const screenProps = { token, onClose: closeScreen };
 
   const handleLogout = () => {
     Alert.alert('確認', 'ログアウトしますか？', [
@@ -71,16 +28,8 @@ export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
   };
 
   return (
-    <AppScreen>
-      <View style={styles.header}>
-        <Pressable accessibilityRole="button" onPress={onClose} style={styles.backButton}>
-          <Text style={styles.backText}>戻る</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.container}>
-        <Text style={styles.title}>ユーティリティメニュー</Text>
-
+    <>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         {/* ログイン中のメールアドレスを表示 */}
         <View style={styles.userCard}>
           <Text style={styles.userInfoLabel}>ログイン中のアカウント</Text>
@@ -113,17 +62,22 @@ export function UtilityScreen({ onClose, onLogout, token, user }: Props) {
             <Text style={styles.logoutText}>退会</Text>
           </Pressable>
         </View>
-      </View>
-    </AppScreen>
+      </ScrollView>
+      {screen !== null && (
+        <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeScreen}>
+          {screen === 'changePassword' && <ChangePasswordScreen {...screenProps} />}
+          {screen === 'deleteAccount' && <DeleteAccountScreen {...screenProps} onDeleted={onLogout} />}
+          {screen === 'help' && <HelpScreen {...screenProps} />}
+          {screen === 'contact' && <ContactScreen {...screenProps} />}
+        </Modal>
+      )}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { paddingHorizontal: 12, alignItems: 'flex-start' },
-  backButton: { minHeight: 44, paddingHorizontal: 12, justifyContent: 'center' },
-  backText: { color: '#2C6049', fontSize: 15, fontWeight: '700' },
-  container: { padding: 20, flex: 1, alignItems: 'center' },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#1C3D2D', marginBottom: 20 },
+  scroll: { flex: 1 },
+  container: { paddingHorizontal: 20, paddingBottom: 20, alignItems: 'center' },
   userCard: { 
     width: '100%', 
     maxWidth: 440, 
@@ -135,7 +89,6 @@ const styles = StyleSheet.create({
     borderColor: '#E2EBE0' 
   },
   userInfoLabel: { fontSize: 12, color: '#7D8C80', marginBottom: 4 },
-  userName: { fontSize: 16, fontWeight: 'bold', color: '#1D4030', marginBottom: 2 },
   userEmail: { fontSize: 13, color: '#5C7A6B' },
   menuContainer: { width: '100%', maxWidth: 440 },
   menuItem: { 
