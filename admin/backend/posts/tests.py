@@ -2,6 +2,7 @@ import hashlib
 import io
 import tempfile
 from datetime import timedelta
+from decimal import Decimal
 from math import degrees
 from pathlib import Path
 from unittest.mock import patch
@@ -21,6 +22,7 @@ from .models import HiddenPost, Post, PostReport
 from .nearby import EARTH_RADIUS_METERS
 
 
+@override_settings(GEOAPIFY_API_KEY='')
 class PostApiTests(TestCase):
     nearby_headers = {'HTTP_X_VIEWER_LATITUDE': '35.1234567', 'HTTP_X_VIEWER_LONGITUDE': '139.1234567'}
 
@@ -67,6 +69,49 @@ class PostApiTests(TestCase):
         detail = self.client.get(f'/api/posts/{post.pk}/')
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.json()['message'], '保存する投稿')
+        self.assertEqual(detail.json()['place_name'], '')
+        self.assertIsNone(detail.json()['place_attribution'])
+
+    def test_place_uses_saved_coordinates_and_is_available_only_in_readable_details(self):
+        source = {'label': '© OpenStreetMap contributors', 'url': 'https://www.openstreetmap.org/copyright'}
+
+        def resolve(latitude, longitude):
+            saved = Post.objects.get(latitude=latitude, longitude=longitude)
+            self.assertEqual(saved.place_name, '')
+            return 'テスト地区', source
+
+        with patch('posts.views.lookup_post_place', side_effect=resolve) as lookup:
+            response = self.create(image=self.image(), place_name='追加で送った地名')
+        self.assertEqual(response.status_code, 201, response.data)
+        lookup.assert_called_once_with(Decimal('35.1234567'), Decimal('139.1234567'))
+        post = Post.objects.get(pk=response.data['id'])
+        self.assertEqual((post.latitude, post.longitude), (Decimal('35.1234567'), Decimal('139.1234567')))
+        self.assertEqual((post.place_name, post.place_attribution), ('テスト地区', source))
+        detail = f'/api/posts/{post.pk}/'
+        self.assertEqual(self.client.get(detail).json()['place_name'], post.place_name)
+        self.assertNotIn('place_name', self.client.get('/api/posts/').json()[0])
+        self.assertNotIn('place_attribution', self.client.get('/api/posts/public/').json()['pins'][0])
+
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+        nearby_detail = self.client.get(detail, **self.nearby_headers)
+        self.assertEqual(nearby_detail.status_code, 200)
+        self.assertEqual(nearby_detail.json()['place_attribution'], source)
+        distant = self.client.get(detail, HTTP_X_VIEWER_LATITUDE='0', HTTP_X_VIEWER_LONGITUDE='0')
+        self.assertEqual(distant.status_code, 404)
+        self.assertNotIn('place_name', distant.json())
+        Post.objects.filter(pk=post.pk).update(is_public=False)
+        private = self.client.get(detail, **self.nearby_headers)
+        self.assertEqual(private.status_code, 404)
+        self.assertNotIn('place_attribution', private.json())
+
+    def test_place_request_failure_preserves_the_post(self):
+        with self.settings(GEOAPIFY_API_KEY='test-key'), patch('posts.place_names.opener.open', side_effect=TimeoutError):
+            response = self.create(message='地名の取得なしでも保存する')
+        self.assertEqual(response.status_code, 201, response.data)
+        post = Post.objects.get(pk=response.data['id'])
+        self.assertEqual(post.message, '地名の取得なしでも保存する')
+        self.assertEqual(post.place_name, '')
+        self.assertIsNone(post.place_attribution)
 
     def test_non_public_post_and_other_accounts_are_not_exposed(self):
         post_id = self.create(is_published=False, image=self.image()).data['id']

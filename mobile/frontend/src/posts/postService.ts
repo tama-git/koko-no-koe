@@ -13,6 +13,8 @@ export type SavedPost = {
   created_at: string;
   can_report?: boolean;
   is_own?: boolean;
+  place_name?: string;
+  place_attribution?: { label: string; url: string | null } | null;
 };
 
 export type PostPin = { 
@@ -201,7 +203,17 @@ function postPath(postId: number): string {
 }
 
 export async function getPostById(postId: number, token: string, viewerCoordinates?: ViewerCoordinates): Promise<SavedPost> {
-  return parsePost(await request(postPath(postId), token, { viewerCoordinates, revalidate: true }));
+  const post = parsePost(await request(postPath(postId), token, { viewerCoordinates, revalidate: true }));
+  const source = post.place_attribution;
+  if (post.place_name !== undefined) {
+    post.place_name = typeof post.place_name === 'string' ? post.place_name.trim() : '';
+  }
+  if (source !== undefined) {
+    post.place_attribution = source && typeof source.label === 'string' && source.label.trim()
+      ? { label: source.label, url: typeof source.url === 'string' && source.url.startsWith('https://') ? source.url : null }
+      : null;
+  }
+  return post;
 }
 
 export function getPostImage(postId: number, token: string, coordinates?: ViewerCoordinates): Promise<string> {

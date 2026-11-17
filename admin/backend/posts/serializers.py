@@ -51,7 +51,8 @@ class PostDetailSerializer(PostSerializer):
     can_report = serializers.SerializerMethodField()
 
     class Meta(PostSerializer.Meta):
-        fields = (*PostSerializer.Meta.fields, 'can_report')
+        fields = (*PostSerializer.Meta.fields, 'can_report', 'place_name', 'place_attribution')
+        read_only_fields = (*PostSerializer.Meta.read_only_fields, 'place_name', 'place_attribution')
 
     def get_can_report(self, post):
         return post.is_public is True and not post.is_admin_hidden and post.user_id_id != self.context['request'].user.pk

@@ -18,6 +18,7 @@ from .images import (
 )
 from .models import HiddenPost, Post, PostReport
 from .nearby import viewer_coordinates
+from .place_names import lookup_post_place
 from .read_access import readable_posts, visible_public_posts
 from .serializers import PostDetailSerializer, PostReportSerializer, PostSerializer
 
@@ -51,11 +52,20 @@ class PostListCreateAPIView(PostAccess, generics.ListCreateAPIView):
         return super().get_queryset().filter(user_id=self.request.user)
 
     def perform_create(self, serializer):
+        post = self._save_post(serializer)
+        place = lookup_post_place(post.latitude, post.longitude)
+        if place is not None:
+            name, attribution = place
+            try:
+                Post.objects.filter(pk=post.pk).update(place_name=name, place_attribution=attribution)
+            except DatabaseError:
+                logger.warning('Could not save the post place name.')
+
+    def _save_post(self, serializer):
         # 投稿者は端末からのIDではなく、ログイン済み会員から決める。
         photo = serializer.validated_data.get('image')
         if photo is None:
-            serializer.save(user_id=self.request.user)
-            return
+            return serializer.save(user_id=self.request.user)
 
         storage = Post._meta.get_field('image').storage
         attempted_names = []
@@ -77,7 +87,7 @@ class PostListCreateAPIView(PostAccess, generics.ListCreateAPIView):
                     raise OSError('Post thumbnail filename collision')
 
             with transaction.atomic():
-                serializer.save(user_id=self.request.user, image=name)
+                return serializer.save(user_id=self.request.user, image=name)
         except Exception as error:
             # 保存途中に失敗した場合も、各ファイルを個別に後片付けする。
             for attempted_name in reversed(attempted_names):

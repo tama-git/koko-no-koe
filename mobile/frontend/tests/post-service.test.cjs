@@ -135,6 +135,20 @@ test('older posts with empty coordinates and publication status can be opened', 
   assert.deepEqual(await service.getPostById(7, 'test-token'), post);
 });
 
+test('post detail reads a place name and its attribution without accepting non-HTTPS links', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  const post = { id: 7, message: 'test', image: null, latitude: 35, longitude: 139,
+    is_published: true, created_at: '2026-11-05T00:00:00Z', place_name: ' 栗田 ' };
+  const source = { label: '© OpenAddresses contributors', url: 'https://openaddresses.io/' };
+  let attribution = source;
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ ...post, place_attribution: attribution }));
+  const detail = await service.getPostById(7, 'test-token');
+  assert.equal(detail.place_name, '栗田');
+  assert.deepEqual(detail.place_attribution, source);
+  attribution = { ...source, url: 'file:///local' };
+  assert.deepEqual((await service.getPostById(7, 'test-token')).place_attribution, { ...source, url: null });
+});
+
 test('photo is attached as a named multipart file and detail uses the configured API', async (t) => {
   const post = { id: 2, message: '', image: 'https://untrusted.invalid/photo', latitude: 35, longitude: 139, is_published: false, created_at: '2026-11-05T00:00:00Z' };
   const calls = [];
