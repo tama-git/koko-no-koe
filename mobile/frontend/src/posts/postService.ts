@@ -2,6 +2,12 @@ import type { Coordinates } from '../location/locationRequest';
 
 const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '') ?? '';
 
+export type PostPlaceAttribution = { label: string; url: string | null };
+export type ManualPostPlace = { place_id: string; name: string; attribution: PostPlaceAttribution };
+export type PostPlaceDisplay = { mode: 'auto' | 'manual'; label: string; attribution: PostPlaceAttribution | null };
+export type PostPlaceTag = { manual_place: ManualPostPlace | null; place_display: PostPlaceDisplay };
+export type PostPlaceCandidate = ManualPostPlace & { categories: string[]; distance_m: number };
+
 export type SavedPost = {
   id: number;
   message: string;
@@ -14,7 +20,9 @@ export type SavedPost = {
   can_report?: boolean;
   is_own?: boolean;
   place_name?: string;
-  place_attribution?: { label: string; url: string | null } | null;
+  place_attribution?: PostPlaceAttribution | null;
+  manual_place?: ManualPostPlace | null;
+  place_display?: PostPlaceDisplay;
 };
 
 export type PostPin = { 
@@ -71,9 +79,11 @@ async function request(path: string, token: string, options: {
   body?: FormData | string;
   viewerCoordinates?: ViewerCoordinates;
   revalidate?: boolean;
+  expectedStatus?: number;
+  failureMessage?: string;
 } = {}): Promise<unknown> {
-  const { method = 'GET', body, viewerCoordinates, revalidate } = options;
-  const resultMessage = unconfirmedResult[method];
+  const { method = 'GET', body, viewerCoordinates, revalidate, failureMessage, expectedStatus = method === 'POST' ? 201 : 200 } = options;
+  const resultMessage = failureMessage ?? unconfirmedResult[method];
   const url = getApiUrl() + path;
   const headers = readHeaders(token, viewerCoordinates);
   if (revalidate) headers['Cache-Control'] = 'no-cache, no-store';
@@ -92,18 +102,18 @@ async function request(path: string, token: string, options: {
     let data: unknown;
     try { data = await response.json(); }
     catch {
-      const message = method === 'PATCH'
+      const message = method === 'PATCH' && !failureMessage
         ? `変更APIからJSON形式の応答がありませんでした（HTTP ${response.status}）。代表PCのDjangoが最新版で起動しているか確認してください。`
         : resultMessage ?? 'サーバーの応答を確認できませんでした。';
       throw new PostApiError(message, response.status);
     }
     if (!response.ok) throw new PostApiError(errorMessage(data) || '投稿の処理に失敗しました。', response.status);
     if (method === 'DELETE') throw new PostApiError(unconfirmedResult.DELETE, response.status);
-    if (response.status !== (method === 'POST' ? 201 : 200)) throw new PostApiError('サーバーの応答を確認できませんでした。');
+    if (response.status !== expectedStatus) throw new PostApiError('サーバーの応答を確認できませんでした。');
     return data;
   } catch (error) {
     if (error instanceof PostApiError) throw error;
-    if (method === 'PATCH') {
+    if (method === 'PATCH' && !failureMessage) {
       throw new PostApiError(controller.signal.aborted
         ? '公開設定の変更が時間切れになりました。変更済みの可能性があるため、再取得した設定を確認してください。'
         : '公開設定の変更中に通信が途切れました。Djangoの起動・接続先・Wi-Fiを確認し、再取得した設定を確認してください。');
@@ -126,7 +136,14 @@ function parsePost(value: unknown): SavedPost {
     throw new PostApiError('投稿データを確認できませんでした。');
   }
   // 認証ヘッダーを送る画像の取得先は、設定した自分のAPIだけに限定する。
-  return { ...p, image: p.image ? `${getApiUrl()}${p.id}/image/` : null } as SavedPost;
+  const post = { ...p, image: p.image ? `${getApiUrl()}${p.id}/image/` : null } as SavedPost;
+  if (post.place_name !== undefined) {
+    post.place_name = typeof post.place_name === 'string' ? post.place_name.trim() : '';
+  }
+  if (post.place_attribution !== undefined) post.place_attribution = parsePlaceAttribution(post.place_attribution);
+  if (post.manual_place !== undefined) post.manual_place = parseManualPlace(post.manual_place);
+  if (post.place_display !== undefined) post.place_display = parsePlaceDisplay(post.place_display);
+  return post;
 }
 
 async function loadPostList(path: string, token: string): Promise<SavedPost[]> {
@@ -202,18 +219,77 @@ function postPath(postId: number): string {
   return `${postId}/`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parsePlaceAttribution(value: unknown): PostPlaceAttribution | null {
+  if (!isRecord(value) || typeof value.label !== 'string' || !value.label.trim()) return null;
+  return { label: value.label, url: typeof value.url === 'string' && value.url.startsWith('https://') ? value.url : null };
+}
+
+function parseManualPlace(value: unknown): ManualPostPlace | null {
+  if (!isRecord(value) || typeof value.place_id !== 'string' || !value.place_id.trim() ||
+      typeof value.name !== 'string' || !value.name.trim()) return null;
+  const attribution = parsePlaceAttribution(value.attribution);
+  return attribution ? { place_id: value.place_id, name: value.name, attribution } : null;
+}
+
+function parsePlaceDisplay(value: unknown): PostPlaceDisplay | undefined {
+  if (!isRecord(value) || (value.mode !== 'auto' && value.mode !== 'manual') ||
+      typeof value.label !== 'string' || !value.label.trim()) return undefined;
+  const attribution = parsePlaceAttribution(value.attribution);
+  if (value.mode === 'manual' && !attribution) return undefined;
+  return { mode: value.mode, label: value.label, attribution };
+}
+
+export function getPostPlaceDisplay(post: SavedPost): PostPlaceDisplay {
+  return post.place_display ?? {
+    mode: 'auto',
+    label: post.place_name ? `${post.place_name}周辺` : 'この付近',
+    attribution: post.place_name ? post.place_attribution ?? null : null,
+  };
+}
+
 export async function getPostById(postId: number, token: string, viewerCoordinates?: ViewerCoordinates): Promise<SavedPost> {
-  const post = parsePost(await request(postPath(postId), token, { viewerCoordinates, revalidate: true }));
-  const source = post.place_attribution;
-  if (post.place_name !== undefined) {
-    post.place_name = typeof post.place_name === 'string' ? post.place_name.trim() : '';
+  return parsePost(await request(postPath(postId), token, { viewerCoordinates, revalidate: true }));
+}
+
+export async function searchPostPlaceCandidates(postId: number, token: string, q = ''): Promise<PostPlaceCandidate[]> {
+  const data = await request(`${postPath(postId)}place-candidates/`, token, {
+    method: 'POST',
+    body: JSON.stringify({ q: q.trim() }),
+    expectedStatus: 200,
+    failureMessage: '施設候補を取得できませんでした。もう一度お試しください。',
+  });
+  if (!isRecord(data) || !Array.isArray(data.candidates)) {
+    throw new PostApiError('施設候補の応答を確認できませんでした。');
   }
-  if (source !== undefined) {
-    post.place_attribution = source && typeof source.label === 'string' && source.label.trim()
-      ? { label: source.label, url: typeof source.url === 'string' && source.url.startsWith('https://') ? source.url : null }
-      : null;
+  return data.candidates.map((value: unknown) => {
+    const place = parseManualPlace(value);
+    if (!place || !isRecord(value) || typeof value.distance_m !== 'number' || !Number.isFinite(value.distance_m) ||
+        value.distance_m < 0 || value.distance_m > 250 || !Array.isArray(value.categories) ||
+        !value.categories.every((category: unknown) => typeof category === 'string')) {
+      throw new PostApiError('施設候補の応答を確認できませんでした。');
+    }
+    return { ...place, distance_m: value.distance_m, categories: value.categories as string[] };
+  });
+}
+
+export async function updatePostPlaceTag(postId: number, token: string, placeId: string | null): Promise<PostPlaceTag> {
+  const failureMessage = '場所の変更結果を確認できませんでした。もう一度お試しください。';
+  const data = await request(`${postPath(postId)}place-tag/`, token, {
+    method: 'PATCH', body: JSON.stringify({ place_id: placeId }), failureMessage,
+  });
+  if (!isRecord(data)) throw new PostApiError(failureMessage);
+  const place = parseManualPlace(data.manual_place);
+  const display = parsePlaceDisplay(data.place_display);
+  if (!display || (placeId === null
+    ? data.manual_place !== null || display.mode !== 'auto'
+    : !place || display.mode !== 'manual')) {
+    throw new PostApiError(failureMessage);
   }
-  return post;
+  return { manual_place: place, place_display: display };
 }
 
 export function getPostImage(postId: number, token: string, coordinates?: ViewerCoordinates): Promise<string> {

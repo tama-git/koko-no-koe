@@ -10,6 +10,8 @@ import type { PostPin } from '../../posts/postService';
 import { distanceMeters } from '../filterNearbyPosts';
 import { createOpenFreeMapDocument } from '../openFreeMapDocument';
 import type { MapPoint, MapSnapshot } from '../openFreeMapDocument';
+import { resolvePostPinTap } from '../postPins';
+import type { MapPinSelection } from '../postPins';
 
 const overlayMessages = {
   position: '地図に現在地の点を表示できませんでした。',
@@ -35,17 +37,19 @@ const mapCredits = [
   { label: '© OpenStreetMap', url: 'https://www.openstreetmap.org/copyright' },
 ];
 
-export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, location, displayPosition, heading, controlsInset, onSelectPost, onShowDistance }: {
+export function HomeMap({
+  postPins, modeRevision, nearbyPostIds, selectedPin, location, displayPosition, heading, controlsInset, onSelectPin, onOpenSettings,
+}: {
   postPins: readonly PostPin[];
-  postsLoading: boolean;
+  modeRevision: number;
   nearbyPostIds: ReadonlySet<number>;
   selectedPin: { id: number } | null;
   location: LocationState;
   displayPosition: DisplayPosition | null;
   heading: number | null;
   controlsInset: ReturnType<typeof Animated.add>;
-  onSelectPost: (id: number) => void;
-  onShowDistance: (id: number, distance: number | null) => void;
+  onSelectPin: (selection: MapPinSelection, revision: number) => void;
+  onOpenSettings: () => void;
 }) {
   const webView = useRef<WebView<WebViewProps>>(null);
   
@@ -65,6 +69,8 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
   const [headingWaitElapsed, setHeadingWaitElapsed] = useState(false);
   const [webViewLoaded, setWebViewLoaded] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [appliedModeRevision, setAppliedModeRevision] = useState<number | null>(null);
+  const pinModeApplied = appliedModeRevision === modeRevision;
   const appliedJson = useRef<string | null>(null);
   const requestId = useRef(0);
   const pendingHeading = useRef<number | null>(null);
@@ -81,8 +87,9 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
   const snapshot: MapSnapshot = useMemo(() => ({
     current: latitude !== null && longitude !== null ? { latitude, longitude } : null,
     displayPosition: latitude !== null && longitude !== null ? displayPosition : null,
+    modeRevision,
     pins,
-  }), [latitude, longitude, displayPosition, pins]);
+  }), [latitude, longitude, displayPosition, modeRevision, pins]);
   const snapshotJson = JSON.stringify(snapshot);
   const positionNeedsUpdate = mapState === 'ready' && coordinates !== null &&
     (appliedPoint === null || distanceMeters(
@@ -99,20 +106,22 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
   }, [positionNeedsUpdate]);
 
   useEffect(() => {
-    if (document || postsLoading || location.status !== 'ready' || heading !== null) return;
+    if (document || location.status !== 'ready' || heading !== null) return;
     const timer = setTimeout(() => setHeadingWaitElapsed(true), INITIAL_HEADING_WAIT_MS);
     return () => clearTimeout(timer);
-  }, [document, postsLoading, location.status, heading]);
+  }, [document, location.status, heading]);
 
   useEffect(() => {
-    if (document || postsLoading || location.status === 'loading') return;
+    if (document || location.status === 'loading') return;
     if (location.status === 'ready' && heading === null && !headingWaitElapsed) return;
     setDocument(makeMapDocument(snapshot, snapshotJson, heading));
-  }, [document, postsLoading, location.status, snapshot, snapshotJson, heading, headingWaitElapsed]);
+  }, [document, location.status, snapshot, snapshotJson, heading, headingWaitElapsed]);
 
   useEffect(() => {
     if (mapState !== 'ready' || !document || snapshotJson === appliedJson.current) return;
     const id = ++requestId.current;
+    // 送信後に内容が前回と同じ状態へ戻っても、送り直して移動中の更新を上書きする。
+    appliedJson.current = null;
     pending.current = { id, json: snapshotJson, point: snapshot.current };
     const command = `{"type":"snapshot","requestId":${id},"snapshot":${snapshotJson}}`;
     webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${command}); true;`);
@@ -146,20 +155,20 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
   }, [controlsInset]);
 
   useEffect(() => {
-    if (mapState !== 'ready') return;
-    const selection = JSON.stringify({ type: 'select-post-pin', id: selectedPin?.id ?? null });
+    if (mapState !== 'ready' || !pinModeApplied) return;
+    const selection = JSON.stringify({ type: 'select-post-pin', id: selectedPin?.id ?? null, modeRevision });
     webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${selection}); true;`);
     if (!selectedPin) return;
 
     // シートの移動が落ち着いてから、見えている地図の中央にピンを合わせる。
     const timer = setTimeout(() => {
       const focus = JSON.stringify({
-        type: 'center-post-pin', id: selectedPin.id, bottomInset: latestControlsInset.current,
+        type: 'center-post-pin', id: selectedPin.id, bottomInset: latestControlsInset.current, modeRevision,
       });
       webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${focus}); true;`);
     }, 300);
     return () => clearTimeout(timer);
-  }, [mapState, selectedPin]);
+  }, [mapState, modeRevision, pinModeApplied, selectedPin]);
 
   const recenter = () => {
     const command = JSON.stringify({ type: 'recenter', bottomInset: latestControlsInset.current });
@@ -174,6 +183,7 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
   const reloadMap = useCallback(() => {
     pending.current = null;
     appliedJson.current = null;
+    setAppliedModeRevision(null);
     setMapState('loading');
     setOverlayIssue(null);
     setAppliedPoint(null);
@@ -191,7 +201,7 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
 
   const onMapMessage = ({ nativeEvent }: WebViewMessageEvent) => {
     if (nativeEvent.data.length > 1024) return;
-    let message: { type?: unknown; id?: unknown; issue?: unknown; requestId?: unknown; bearing?: unknown } | null;
+    let message: { type?: unknown; id?: unknown; issue?: unknown; requestId?: unknown; bearing?: unknown; modeRevision?: unknown } | null;
     try {
       message = JSON.parse(nativeEvent.data);
     } catch {
@@ -210,7 +220,8 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
 
     if (message.type === 'ready') {
       const issue = readOverlayIssue(message.issue);
-      appliedJson.current = document?.json ?? null;
+      appliedJson.current = issue === null ? document?.json ?? null : null;
+      setAppliedModeRevision(message.modeRevision === modeRevision ? modeRevision : null);
       setAppliedPoint(issue === 'position' || issue === 'range' ? null : document?.point ?? null);
       setOverlayIssue(issue);
       setMapState('ready');
@@ -224,21 +235,21 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
       const currentRequest = pending.current;
       if (!currentRequest || message.requestId !== currentRequest.id) return;
       pending.current = null;
+      setAppliedModeRevision(message.modeRevision === modeRevision ? modeRevision : null);
       if (message.type === 'overlay-applied') {
         appliedJson.current = currentRequest.json;
         setOverlayIssue(null);
+      } else {
+        setOverlayIssue(readOverlayIssue(message.issue));
       }
       if (message.type === 'overlay-applied' || message.issue === 'pins') {
         const next = currentRequest.point;
         setAppliedPoint(previous =>
           previous?.latitude === next?.latitude && previous?.longitude === next?.longitude ? previous : next);
       }
-    } else if (message.type === 'pin' && Number.isSafeInteger(message.id)) {
-      const pin = pins.find(pin => pin.id === message.id);
-      if (!pin) return;
-      if (!coordinates) onShowDistance(pin.id, null);
-      else if (pin.nearby) onSelectPost(pin.id);
-      else onShowDistance(pin.id, distanceMeters(coordinates.latitude, coordinates.longitude, pin.latitude, pin.longitude));
+    } else if (message.type === 'pin' && pinModeApplied) {
+      const selection = resolvePostPinTap(pins, message.id, message.modeRevision, modeRevision, coordinates);
+      if (selection) onSelectPin(selection, modeRevision);
     }
   };
 
@@ -263,6 +274,7 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
         key={reloadKey}
         source={document.source}
         style={styles.map}
+        pointerEvents={pinModeApplied ? 'auto' : 'none'}
         originWhitelist={['*']}
         onShouldStartLoadWithRequest={request => request.url === 'about:blank'}
         onMessage={onMapMessage}
@@ -275,8 +287,8 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
         allowFileAccess={false}
         setSupportMultipleWindows={false}
       />}
-      {mapState === 'ready' && (
-        <Animated.View pointerEvents="box-none" style={[styles.controls, { bottom: controlsInset }]}>
+      <Animated.View pointerEvents="box-none" style={[styles.controls, { bottom: controlsInset }]}>
+        {mapState === 'ready' && (
           <Text style={styles.credits}>
             {mapCredits.map(({ label, url }, index) => (
               <Text key={url}>
@@ -286,8 +298,19 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
               </Text>
             ))}
           </Text>
-          <View style={styles.mapButtons}>
-            {/* 2枚目の画像：方角（赤とグレーのコンパス針）ボタン */}
+        )}
+        <View style={styles.mapButtons}>
+          <Pressable accessibilityRole="button" accessibilityLabel="設定を開く" style={styles.mapButton}
+            onPress={onOpenSettings}>
+            <View style={styles.iconContainer}>
+              <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#1D4030"
+                strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="m9.5 4 .7-2h3.6l.7 2 1.6.9 2.1-.4 1.8 3.1-1.4 1.6v1.8L20 12.6l-1.8 3.1-2.1-.4-1.6.9-.7 2h-3.6l-.7-2-1.6-.9-2.1.4L4 12.6 5.4 11V9.2L4 7.6l1.8-3.1 2.1.4 1.6-.9Z" transform="translate(0 1.9)" />
+                <Circle cx={12} cy={12} r={2.5} />
+              </Svg>
+            </View>
+          </Pressable>
+          {mapState === 'ready' && (
             <Pressable accessibilityRole="button" accessibilityLabel="北を上に戻す"
               style={styles.mapButton} onPress={resetBearing}>
               <Animated.View style={[styles.iconContainer, { transform: [{ rotate: compassRotationStyle }] }]}>
@@ -298,27 +321,27 @@ export function HomeMap({ postPins, postsLoading, nearbyPostIds, selectedPin, lo
                 </Svg>
               </Animated.View>
             </Pressable>
+          )}
 
-            {/* 1枚目の画像：現在位置に戻る（黒枠のナビゲーション矢印）ボタン */}
-            {appliedPoint && coordinates && (
-              <Pressable accessibilityRole="button" accessibilityLabel="現在地に戻る"
-                style={styles.mapButton} onPress={recenter}>
-                <View style={styles.iconContainer}>
-                  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                    <Path
-                      d="M21 3L3 10.53V11.51L9.84 14.16L12.48 21H13.46L21 3Z"
-                      stroke="#1F1F1F"
-                      strokeWidth={2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </Svg>
-                </View>
-              </Pressable>
-            )}
-          </View>
-        </Animated.View>
-      )}
+          {/* 1枚目の画像：現在位置に戻る（黒枠のナビゲーション矢印）ボタン */}
+          {mapState === 'ready' && appliedPoint && coordinates && (
+            <Pressable accessibilityRole="button" accessibilityLabel="現在地に戻る"
+              style={styles.mapButton} onPress={recenter}>
+              <View style={styles.iconContainer}>
+                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                  <Path
+                    d="M21 3L3 10.53V11.51L9.84 14.16L12.48 21H13.46L21 3Z"
+                    stroke="#1F1F1F"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
+              </View>
+            </Pressable>
+          )}
+        </View>
+      </Animated.View>
       {notice ? (
         <SafeAreaView pointerEvents="box-none" style={styles.noticeArea}>
           <View style={styles.notice}>
@@ -351,6 +374,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   mapButtons: {
+    marginLeft: 'auto',
     flexDirection: 'column',
     gap: 10,
   },

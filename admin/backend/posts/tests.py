@@ -72,7 +72,7 @@ class PostApiTests(TestCase):
         self.assertEqual(detail.json()['place_name'], '')
         self.assertIsNone(detail.json()['place_attribution'])
 
-    def test_place_uses_saved_coordinates_and_is_available_only_in_readable_details(self):
+    def test_place_uses_saved_coordinates_and_is_available_in_readable_lists_and_details(self):
         source = {'label': '© OpenStreetMap contributors', 'url': 'https://www.openstreetmap.org/copyright'}
 
         def resolve(latitude, longitude):
@@ -89,13 +89,18 @@ class PostApiTests(TestCase):
         self.assertEqual((post.place_name, post.place_attribution), ('テスト地区', source))
         detail = f'/api/posts/{post.pk}/'
         self.assertEqual(self.client.get(detail).json()['place_name'], post.place_name)
-        self.assertNotIn('place_name', self.client.get('/api/posts/').json()[0])
-        self.assertNotIn('place_attribution', self.client.get('/api/posts/public/').json()['pins'][0])
+        own = self.client.get('/api/posts/').json()[0]
+        self.assertEqual(own['place_display'], {'mode': 'auto', 'label': 'テスト地区周辺', 'attribution': source})
+        self.assertNotIn('place_name', own)
+        self.assertNotIn('manual_place', own)
+        self.assertEqual(set(self.client.get('/api/posts/public/').json()['pins'][0]), {'id', 'latitude', 'longitude', 'isOwn'})
 
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
         nearby_detail = self.client.get(detail, **self.nearby_headers)
         self.assertEqual(nearby_detail.status_code, 200)
         self.assertEqual(nearby_detail.json()['place_attribution'], source)
+        self.assertEqual(self.client.get('/api/posts/public/', **self.nearby_headers).json()['posts'][0]['place_display'],
+                         own['place_display'])
         distant = self.client.get(detail, HTTP_X_VIEWER_LATITUDE='0', HTTP_X_VIEWER_LONGITUDE='0')
         self.assertEqual(distant.status_code, 404)
         self.assertNotIn('place_name', distant.json())
@@ -103,6 +108,7 @@ class PostApiTests(TestCase):
         private = self.client.get(detail, **self.nearby_headers)
         self.assertEqual(private.status_code, 404)
         self.assertNotIn('place_attribution', private.json())
+        self.assertEqual(self.client.get('/api/posts/public/', **self.nearby_headers).json(), {'pins': [], 'posts': []})
 
     def test_place_request_failure_preserves_the_post(self):
         with self.settings(GEOAPIFY_API_KEY='test-key'), patch('posts.place_names.opener.open', side_effect=TimeoutError):
@@ -164,12 +170,21 @@ class PostApiTests(TestCase):
         HiddenPost.objects.create(user_id=self.other, post_id_id=hidden['id'])
         Post.objects.filter(pk=moderated['id']).update(admin_hidden_at=timezone.now())
         PostReaction.objects.create(post_id=far['id'], user=self.other, emoji='👍')
+        source = {'label': '© OpenStreetMap contributors', 'url': 'https://www.openstreetmap.org/copyright'}
+        for post, name in ((boundary, 'Boundary area'), (private, 'Private area'), (hidden, 'Hidden area'),
+                           (moderated, 'Moderated area')):
+            Post.objects.filter(pk=post['id']).update(place_name=name, place_attribution=source)
+        Post.objects.filter(pk=far['id']).update(manual_place={
+            'place_id': 'far-id', 'name': 'Far facility', 'attribution': source,
+        })
 
         own = self.client.get('/api/posts/').json()
         self.assertEqual({post['id'] for post in own}, {
             boundary['id'], far['id'], private['id'], hidden['id'], moderated['id'],
         })
-        self.assertTrue(next(post for post in own if post['id'] == far['id'])['image'])
+        far_owned = next(post for post in own if post['id'] == far['id'])
+        self.assertTrue(far_owned['image'])
+        self.assertEqual(far_owned['place_display'], {'mode': 'manual', 'label': 'Far facility', 'attribution': source})
 
         self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
         own_far = Post.objects.create(user_id=self.other, is_public=True, latitude=-1, longitude=0)
@@ -184,10 +199,15 @@ class PostApiTests(TestCase):
                 {'id': far['id'], 'latitude': -0.01, 'longitude': 0, 'isOwn': False},
                 {'id': boundary['id'], 'latitude': 0, 'longitude': 0, 'isOwn': False},
             ],
-            'posts': [boundary | {'is_own': False}],
+            'posts': [boundary | {
+                'is_own': False,
+                'place_display': {'mode': 'auto', 'label': 'Boundary area周辺', 'attribution': source},
+            }],
         })
         self.assertNotContains(response, 'far text')
         self.assertNotContains(response, f"/{far['id']}/image/")
+        for private_value in ('Far facility', 'far-id', 'Private area', 'Hidden area', 'Moderated area'):
+            self.assertNotContains(response, private_value)
 
     def test_legacy_jpeg_for_another_member_does_not_include_camera_metadata(self):
         data = io.BytesIO()

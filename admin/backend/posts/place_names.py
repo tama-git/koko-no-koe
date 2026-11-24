@@ -40,14 +40,18 @@ opener = build_opener(NoRedirect())
 
 
 class PostPlaceServiceError(Exception):
-    """A safe service failure reason for the backfill command."""
+    """A service failure that does not contain request data."""
+
+    def __init__(self, reason, *, http_status=None):
+        super().__init__(reason)
+        self.http_status = http_status
 
 
-def _service_failure(reason, strict):
+def _service_failure(reason, strict, *, http_status=None):
     # URL・例外本文には投稿座標やキーが含まれるため記録しない。
     logger.warning('Geoapify: %s', reason)
     if strict:
-        raise PostPlaceServiceError(reason) from None
+        raise PostPlaceServiceError(reason, http_status=http_status) from None
 
 
 def _clean_text(value, max_length=100):
@@ -59,7 +63,7 @@ def _clean_text(value, max_length=100):
     return value
 
 
-def _attribution(result):
+def geoapify_attribution(result):
     source = result.get('datasource')
     if not isinstance(source, dict):
         return None
@@ -129,7 +133,7 @@ def _select_place(results, coordinates):
     if not isinstance(results, list) or not results or not isinstance(results[0], dict):
         return None
     result = results[0]
-    attribution = _attribution(result)
+    attribution = geoapify_attribution(result)
     if attribution is None:
         return None
     if result.get('country_code') == 'jp':
@@ -148,27 +152,17 @@ def _select_place(results, coordinates):
     return (name, attribution) if name else None
 
 
-def lookup_post_place(latitude, longitude, *, strict=False):
+def request_geoapify_json(endpoint, parameters, *, strict=False, max_response_bytes=MAX_RESPONSE_BYTES):
     api_key = settings.GEOAPIFY_API_KEY
-    coordinates = validated_coordinates((latitude, longitude))
-    if coordinates is None:
-        return None
     if not api_key:
         _service_failure('GEOAPIFY_API_KEY is not configured.', strict)
         return None
-    query = urlencode({
-        'lat': latitude,
-        'lon': longitude,
-        'lang': 'ja',
-        'format': 'json',
-        'limit': MAX_RESULTS,
-        'apiKey': api_key,
-    })
+    query = urlencode({**parameters, 'apiKey': api_key})
     try:
-        with opener.open(f'{REVERSE_GEOCODING_URL}?{query}', timeout=LOOKUP_TIMEOUT_SECONDS) as response:
-            data = response.read(MAX_RESPONSE_BYTES + 1)
+        with opener.open(f'{endpoint}?{query}', timeout=LOOKUP_TIMEOUT_SECONDS) as response:
+            data = response.read(max_response_bytes + 1)
     except HTTPError as error:
-        _service_failure(f'HTTP {error.code}.', strict)
+        _service_failure(f'HTTP {error.code}.', strict, http_status=error.code)
         return None
     except (OSError, HTTPException) as error:
         reason = error.reason if isinstance(error, URLError) else error
@@ -176,10 +170,29 @@ def lookup_post_place(latitude, longitude, *, strict=False):
         _service_failure(message, strict)
         return None
     try:
-        payload = json.loads(data) if len(data) <= MAX_RESPONSE_BYTES else None
+        payload = json.loads(data) if len(data) <= max_response_bytes else None
     except (ValueError, RecursionError):
         payload = None
-    if not isinstance(payload, dict) or not isinstance(payload.get('results'), list):
+    if not isinstance(payload, dict):
+        _service_failure('Invalid response.', strict)
+        return None
+    return payload
+
+
+def lookup_post_place(latitude, longitude, *, strict=False):
+    coordinates = validated_coordinates((latitude, longitude))
+    if coordinates is None:
+        return None
+    payload = request_geoapify_json(REVERSE_GEOCODING_URL, {
+        'lat': latitude,
+        'lon': longitude,
+        'lang': 'ja',
+        'format': 'json',
+        'limit': MAX_RESULTS,
+    }, strict=strict)
+    if payload is None:
+        return None
+    if not isinstance(payload.get('results'), list):
         _service_failure('Invalid response.', strict)
         return None
     place = _select_place(payload['results'], coordinates)

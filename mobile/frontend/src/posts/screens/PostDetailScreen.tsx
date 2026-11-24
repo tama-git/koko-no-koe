@@ -1,15 +1,45 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ActionSheetIOS, Alert, Linking, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, Modal } from 'react-native';
-import { deletePost, getPostById, getPostImage, PostApiError, hidePostApi, updatePostVisibility } from '../postService';
-import type { SavedPost } from '../postService';
+import type { ReactNode } from 'react';
+import { ActionSheetIOS, Alert, BackHandler, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, Modal } from 'react-native';
+import type { LayoutChangeEvent } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
+import { deletePost, getPostById, getPostImage, getPostPlaceDisplay, PostApiError, hidePostApi, updatePostVisibility } from '../postService';
+import type { PostPlaceDisplay, SavedPost } from '../postService';
 import { formatPostDate } from '../formatPostDate';
 import { getCurrentLocation } from '../../location/getCurrentLocation';
-import { PostVisibilityOptions } from '../components/PostVisibilityOptions';
+import { PostManagementMenu } from '../components/PostManagementMenu';
+import { PostPlaceCredits } from '../components/PostPlaceCredits';
+import { PostPlaceEditorScreen } from './PostPlaceEditorScreen';
 import { ReportScreen } from '../../reports/screens/ReportScreen';
 import { ReactionBar } from '../../likes/components/ReactionBar';
 
 const locationUnavailable = '現在地を取得できませんでした。もう一度お試しください。';
 const cannotReadPost = 'この投稿は現在地から閲覧できません。';
+const maxPhotoHeight = 320;
+
+export type PostDetailSheetControls = {
+  compact: boolean;
+  headerDivider: ReactNode;
+  onExpand: () => void;
+  onHeaderLayout: (event: LayoutChangeEvent) => void;
+};
+
+function PostDetailPhoto({ uri, onError }: { uri: string; onError: () => void }) {
+  const [aspectRatio, setAspectRatio] = useState(4 / 3);
+
+  return (
+    <Image
+      source={{ uri }}
+      style={[styles.postImage, { aspectRatio, maxWidth: maxPhotoHeight * aspectRatio }]}
+      resizeMode="contain"
+      onLoad={({ nativeEvent: { source: { width, height } } }) => {
+        const ratio = width / height;
+        if (Number.isFinite(ratio) && ratio > 0) setAspectRatio(ratio);
+      }}
+      onError={onError}
+    />
+  );
+}
 
 async function measureViewerCoordinates() {
   const location = await getCurrentLocation();
@@ -29,18 +59,21 @@ function readErrorMessage(reason: unknown, fallback: string) {
 /**
  * 投稿データの型定義
  */
-export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden, onVisibilityChanged, embedded = false }: {
+export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden, onVisibilityChanged, onPlaceChanged, sheet }: {
   route: { params: { postId: number } };
   navigation: { goBack: () => void };
   token: string;
   onDeleted?: () => void;
   onHidden?: () => void;
   onVisibilityChanged?: () => void;
-  embedded?: boolean;
+  onPlaceChanged?: (postId: number, place: PostPlaceDisplay) => void;
+  sheet?: PostDetailSheetControls;
 }) {
   // 一覧画面から渡された投稿IDを受け取る
   const { postId } = route.params;
-  const Container = embedded ? View : SafeAreaView;
+  const Container = sheet ? View : SafeAreaView;
+  const containerStyle = [styles.screen, !sheet && styles.standalone];
+  const compact = sheet?.compact ?? false;
 
   const [post, setPost] = useState<SavedPost | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -54,9 +87,27 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   const [savingVisibility, setSavingVisibility] = useState(false);
   const [hiding, setHidden] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [managementPostId, setManagementPostId] = useState<number | null>(null);
+  const [editingPlacePostId, setEditingPlacePostId] = useState<number | null>(null);
   const deletionPending = useRef(false);
   const visibilityPending = useRef(false);
   const highidingPending = useRef(false);
+  const isOwnPost = post?.id === postId && post.is_own === true;
+  const canChangeVisibility = isOwnPost && Boolean(onVisibilityChanged) && post.is_admin_hidden !== true;
+  const showingManagement = !compact && isOwnPost && managementPostId === postId;
+
+  useEffect(() => {
+    if (compact) setManagementPostId(null);
+  }, [compact]);
+
+  useEffect(() => {
+    if (!showingManagement) return;
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      setManagementPostId(null);
+      return true;
+    });
+    return () => back.remove();
+  }, [showingManagement]);
 
   /**
    * サーバーから特定の投稿詳細データを取得する処理
@@ -115,7 +166,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   }, [imagePostId, postId, token, needsViewerLocation, imageRevision]);
 
   const removePost = async () => {
-    if (!onDeleted || deletionPending.current || visibilityPending.current) return;
+    if (!isOwnPost || !onDeleted || deletionPending.current || visibilityPending.current) return;
     deletionPending.current = true;
     setDeleting(true);
     try {
@@ -146,7 +197,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   };
 
   const saveVisibility = async (next: boolean) => {
-    if (!onVisibilityChanged || visibilityPending.current || deletionPending.current) return;
+    if (!canChangeVisibility || !onVisibilityChanged || visibilityPending.current || deletionPending.current) return;
     visibilityPending.current = true;
     setSavingVisibility(true);
     try {
@@ -164,7 +215,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   };
 
   const confirmVisibilityChange = (next: boolean) => {
-    if (!post || (post.is_published === true) === next || post.is_admin_hidden === true) return;
+    if (!canChangeVisibility || (post.is_published === true) === next) return;
     Alert.alert(
       next ? '投稿を公開しますか？' : '本人のみ公開に変更しますか？',
       next ? '他の会員もこの投稿を閲覧できるようになります。' : '他の会員の地図や一覧から外れます。',
@@ -228,25 +279,53 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
     ]);
   };
 
+  const actionsBusy = deleting || savingVisibility || hiding;
+  const canOpenActions = !loading && post?.id === postId && (isOwnPost || post.can_report === true);
+  const header = (
+    <View style={[styles.header, sheet ? styles.sheetHeader : styles.standaloneHeader]} onLayout={sheet?.onHeaderLayout}>
+      <Pressable accessibilityRole="button" style={styles.detailBackButton}
+        onPress={navigation.goBack} disabled={!sheet && actionsBusy}>
+        <Text style={styles.detailBackText}>{sheet ? '〈 一覧に戻る' : '〈 戻る'}</Text>
+      </Pressable>
+      {canOpenActions && (
+        <Pressable accessibilityRole="button"
+          accessibilityLabel={isOwnPost ? (showingManagement ? '投稿管理メニューを閉じる' : '投稿を管理') : '投稿の操作'}
+          accessibilityState={{ disabled: actionsBusy, busy: actionsBusy, expanded: isOwnPost ? showingManagement : undefined }}
+          disabled={actionsBusy} style={styles.actionButton}
+          onPress={() => {
+            if (sheet?.compact) sheet.onExpand();
+            if (isOwnPost) setManagementPostId(showingManagement ? null : postId);
+            else openPostActions();
+          }}>
+          {actionsBusy ? <ActivityIndicator color="#2C6049" /> : <Text style={styles.actionText}>…</Text>}
+        </Pressable>
+      )}
+    </View>
+  );
+
   // 読み込み中のインジケーター表示
   if (loading) {
     return (
-      <Container style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#2C6049" />
-        {!embedded && <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.backButtonText}>戻る</Text></TouchableOpacity>}
+      <Container style={containerStyle}>
+        {header}
+        {sheet?.headerDivider}
+        {!compact && <View style={styles.loaderContainer}><ActivityIndicator size="large" color="#2C6049" /></View>}
       </Container>
     );
   }
 
   // データが見つからない場合
-  if (!post) {
+  if (!post || post.id !== postId) {
     return (
-      <Container style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.loaderContainer}>
-          <Text style={styles.errorText}>{error || '投稿が見つかりませんでした。'}</Text>
-          <TouchableOpacity onPress={() => setRevision(value => value + 1)} style={styles.backButton}><Text style={styles.backButtonText}>再取得</Text></TouchableOpacity>
-          {!embedded && <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Text style={styles.backButtonText}>戻る</Text></TouchableOpacity>}
-        </ScrollView>
+      <Container style={containerStyle}>
+        {header}
+        {sheet?.headerDivider}
+        {!compact && (
+          <ScrollView contentContainerStyle={styles.loaderContainer}>
+            <Text style={styles.errorText}>{error || '投稿が見つかりませんでした。'}</Text>
+            <TouchableOpacity onPress={() => setRevision(value => value + 1)} style={styles.backButton}><Text style={styles.backButtonText}>再取得</Text></TouchableOpacity>
+          </ScrollView>
+        )}
       </Container>
     );
   }
@@ -254,60 +333,53 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   const report = reportOpen && post.can_report === true
     ? <ReportScreen postId={post.id} message={post.message} token={token} onClose={() => setReportOpen(false)} />
     : null;
-  if (report && !embedded) return report;
+  if (report && !sheet) return report;
   const postDate = formatPostDate(post.created_at);
   const hasMessage = post.message.trim().length > 0;
-  const placeAttribution = post.place_name ? post.place_attribution : null;
-  const sourceUrl = placeAttribution?.url;
+  const place = getPostPlaceDisplay(post);
+  const closeManagement = () => setManagementPostId(null);
+  const fromManagement = (action: () => void) => {
+    closeManagement();
+    action();
+  };
 
   return (
-    <Container style={styles.safeArea}>
+    <Container style={containerStyle}>
       {report && <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setReportOpen(false)}>
         {report}
       </Modal>}
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.content}>
-          
-          {/* 画面タイトル */}
-          <View style={styles.header}>
-            <Text accessibilityRole="header" style={styles.screenTitle}>投稿詳細</Text>
-            {post.can_report === true && (
-              <Pressable accessibilityRole="button" accessibilityLabel="投稿の操作" onPress={openPostActions} style={styles.actionButton}>
-                <Text style={styles.actionText}>…</Text>
-              </Pressable>
-            )}
-          </View>
-
-          {onVisibilityChanged && post.is_admin_hidden !== true && (
-            <PostVisibilityOptions value={post.is_published === true} onChange={confirmVisibilityChange}
-              disabled={deleting || savingVisibility} />
-          )}
-          {savingVisibility && <ActivityIndicator color="#2C6049" accessibilityLabel="公開設定を保存中" />}
-
-          {/* 投稿内容を表示するカード */}
+      {isOwnPost && editingPlacePostId === postId && (
+        <PostPlaceEditorScreen postId={postId} token={token} currentPlace={place}
+          selectedPlaceId={post.manual_place?.place_id ?? null}
+          onClose={() => setEditingPlacePostId(null)}
+          onSaved={updated => {
+            setPost(current => current?.id === postId ? { ...current, ...updated } : current);
+            onPlaceChanged?.(postId, updated.place_display);
+            setEditingPlacePostId(null);
+          }}
+        />
+      )}
+      {header}
+      {sheet?.headerDivider}
+      <View style={styles.body} pointerEvents={compact ? 'none' : 'auto'}>
+        <ScrollView contentContainerStyle={[styles.scrollContent, sheet && styles.sheetScrollContent]}
+          accessibilityElementsHidden={compact || showingManagement}
+          importantForAccessibility={compact || showingManagement ? 'no-hide-descendants' : 'auto'}>
           <View style={styles.card}>
-            {post.is_admin_hidden === true && (
-              <Text style={styles.locationText}>管理者により非表示</Text>
-            )}
-
-            <View>
-              <Text style={[styles.dateText, styles.locationTitle]}>投稿場所</Text>
-              <Text style={[styles.messageText, styles.placeName]}>{post.place_name ? `${post.place_name}周辺` : 'この付近'}</Text>
-              {placeAttribution && (
-                <View style={styles.placeCredits}>
-                  <Text accessibilityRole="link" style={[styles.dateText, styles.placeCreditLink]}
-                    onPress={() => { void Linking.openURL('https://www.geoapify.com/').catch(() => {}); }}>
-                    Powered by Geoapify
-                  </Text>
-                  {sourceUrl ? (
-                    <Text accessibilityRole="link" style={[styles.dateText, styles.placeCreditLink]}
-                      onPress={() => { void Linking.openURL(sourceUrl).catch(() => {}); }}>
-                      {placeAttribution.label}
-                    </Text>
-                  ) : <Text style={styles.dateText}>{placeAttribution.label}</Text>}
-                </View>
-              )}
+            <View style={styles.placeHeading}>
+              <Text style={styles.placeLabel}>投稿場所</Text>
+              <View style={styles.placeNameRow}>
+                <Svg accessible={false} style={styles.placePin} width={16} height={16} viewBox="0 0 24 24"
+                  fill="none" stroke="#2C6049" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <Path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+                  <Circle cx={12} cy={10} r={2.5} />
+                </Svg>
+                <Text accessibilityRole="header" style={styles.placeName}>{place.label}</Text>
+              </View>
             </View>
+            {post.is_admin_hidden === true && (
+              <Text style={styles.dateText}>管理者により非表示</Text>
+            )}
 
             {/* 写真がある場合は表示 */}
             {post.image && (imageError ? (
@@ -319,7 +391,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
                 </TouchableOpacity>
               </>
             ) : imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.postImage}
+              <PostDetailPhoto key={post.id} uri={imageUri}
                 onError={() => { setImageUri(null); setImageError('写真を表示できませんでした。'); }} />
             ) : <ActivityIndicator accessibilityLabel="写真を取得中" color="#2C6049" />)}
 
@@ -330,26 +402,18 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
 
             {hasMessage && <Text style={styles.messageText}>{post.message}</Text>}
             {postDate ? <Text style={styles.dateText}>{postDate}</Text> : null}
+            {place.attribution && <PostPlaceCredits sources={[place.attribution]} compact />}
           </View>
-
-          {/* 単独表示時は画面内に戻るボタンを出し、シート内では固定ヘッダーを使う。 */}
-          {!embedded && <TouchableOpacity
-            style={styles.backButton} 
-            onPress={() => navigation.goBack()}
-            disabled={deleting || savingVisibility}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.backButtonText}>戻る</Text>
-          </TouchableOpacity>}
-          {onDeleted && (
-            <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: deleting || savingVisibility, busy: deleting }}
-              style={styles.deleteButton} disabled={deleting || savingVisibility} onPress={confirmDeletion}>
-              <Text style={styles.deleteButtonText}>{deleting ? '削除中…' : '投稿を削除'}</Text>
-            </TouchableOpacity>
-          )}
-
-        </View>
-      </ScrollView>
+        </ScrollView>
+        {showingManagement && (
+          <PostManagementMenu visibility={post.is_published} adminHidden={post.is_admin_hidden === true}
+            onChangeVisibility={canChangeVisibility
+              ? () => fromManagement(() => confirmVisibilityChange(post.is_published !== true)) : undefined}
+            onEditPlace={() => fromManagement(() => setEditingPlacePostId(postId))}
+            onDelete={onDeleted ? () => fromManagement(confirmDeletion) : undefined}
+            onClose={closeManagement} />
+        )}
+      </View>
     </Container>
   );
 }
@@ -358,55 +422,44 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
  * 画面のスタイル定義
  */
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F7F9F7',
-  },
+  screen: { flex: 1 },
+  standalone: { backgroundColor: '#FFFFFF' },
   loaderContainer: {
     flexGrow: 1,
     padding: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F7F9F7',
   },
   errorText: {
     fontSize: 15,
     color: '#D9534F',
     fontWeight: '600',
   },
-  container: {
-    flexGrow: 1,
-    padding: 20,
-    alignItems: 'center',
+  scrollContent: {
+    paddingHorizontal: 8,
+    paddingBottom: 16,
   },
-  content: {
-    width: '100%',
-    maxWidth: 440,
-  },
-  header: { minHeight: 44, justifyContent: 'center', marginBottom: 20 },
-  actionButton: { position: 'absolute', right: 0, top: 0, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  actionText: { fontSize: 26, fontWeight: '700', color: '#2C6049' },
-  screenTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    paddingHorizontal: 44,
-    color: '#1C3D2D',
-  },
+  sheetScrollContent: { paddingTop: 8 },
+  body: { flex: 1, minHeight: 0, width: '100%', maxWidth: 472, alignSelf: 'center' },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
     gap: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#E2EBE0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#DDDAD2',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
   },
+  header: { width: '100%', flexShrink: 0, minHeight: 44, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  sheetHeader: { paddingHorizontal: 20 },
+  standaloneHeader: { maxWidth: 472, alignSelf: 'center', paddingHorizontal: 12 },
+  placeHeading: { gap: 3 },
+  placeLabel: { fontSize: 12, fontWeight: '600', color: '#53645A' },
+  placeNameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  placePin: { flexShrink: 0, marginTop: 3 },
+  placeName: { flex: 1, minWidth: 0, fontSize: 18, fontWeight: '600', color: '#1D4030' },
+  actionButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  actionText: { fontSize: 24, fontWeight: '700', color: '#2C6049' },
   dateText: {
     fontSize: 12,
     color: '#5C7A6B',
@@ -418,33 +471,11 @@ const styles = StyleSheet.create({
   },
   postImage: {
     width: '100%',
-    height: 240,
+    alignSelf: 'center',
+    maxHeight: maxPhotoHeight,
+    marginVertical: 2,
     borderRadius: 10,
-    resizeMode: 'contain',
-  },
-  locationTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  placeName: {
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  locationText: {
-    fontSize: 13,
-    color: '#5C7A6B',
-    marginTop: 4,
-  },
-  placeCredits: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    columnGap: 8,
-    rowGap: 4,
-    marginTop: 8,
-  },
-  placeCreditLink: {
-    textDecorationLine: 'underline',
+    backgroundColor: '#F7F9F7',
   },
   backButton: {
     height: 48,
@@ -458,14 +489,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  deleteButton: {
-    minHeight: 48,
-    marginTop: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#B3261E',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteButtonText: { color: '#B3261E', fontSize: 15, fontWeight: '700' },
+  detailBackButton: { flex: 1, minHeight: 44, justifyContent: 'center' },
+  detailBackText: { color: '#1D4030', fontSize: 16, fontWeight: '700' },
 });

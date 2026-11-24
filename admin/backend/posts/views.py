@@ -17,10 +17,14 @@ from .images import (
     post_photo_preview, post_thumbnail_name,
 )
 from .models import HiddenPost, Post, PostReport
-from .nearby import viewer_coordinates
-from .place_names import lookup_post_place
+from .nearby import validated_coordinates, viewer_coordinates
+from .place_names import PostPlaceServiceError, lookup_post_place
+from .place_tags import search_place_candidates, verify_manual_place
 from .read_access import readable_posts, visible_public_posts
-from .serializers import PostDetailSerializer, PostReportSerializer, PostSerializer
+from .serializers import (
+    PostDetailSerializer, PostListSerializer, PostPlaceSearchSerializer, PostPlaceTagSerializer, PostReportSerializer,
+    PostSerializer,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -50,6 +54,11 @@ class PostListCreateAPIView(PostAccess, generics.ListCreateAPIView):
     """
     def get_queryset(self):
         return super().get_queryset().filter(user_id=self.request.user)
+
+    def get_serializer_class(self):
+        if self.request.method == 'GET':
+            return PostListSerializer
+        return super().get_serializer_class()
 
     def perform_create(self, serializer):
         post = self._save_post(serializer)
@@ -106,6 +115,8 @@ class PostPhotoSaveError(APIException):
 
 
 class PublicPostListAPIView(PostAccess, generics.ListAPIView):
+    serializer_class = PostListSerializer
+
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         viewer = request.user
@@ -192,6 +203,65 @@ class PostVisibilityAPIView(PostAccess, generics.GenericAPIView):
                 raise NotFound('投稿が見つかりませんでした。')
             raise PermissionDenied('管理者により非表示のため、公開設定を変更できません。')
         return Response({'is_published': data['is_published']})
+
+
+class PostPlaceUnavailable(APIException):
+    status_code = 503
+    default_detail = '施設情報を取得できませんでした。時間をおいてお試しください。'
+
+
+class OwnedPostPlaceAPIView(PostAccess, generics.GenericAPIView):
+    parser_classes = [JSONParser]
+
+    def get_queryset(self):
+        return super().get_queryset().filter(user_id=self.request.user)
+
+    def post_coordinates(self, post):
+        coordinates = validated_coordinates((post.latitude, post.longitude))
+        if coordinates is None:
+            raise ValidationError('保存済みの投稿地点がないため施設を指定できません。')
+        return coordinates
+
+
+class PostPlaceCandidatesAPIView(OwnedPostPlaceAPIView):
+    serializer_class = PostPlaceSearchSerializer
+
+    def post(self, request, pk):
+        post = self.get_object()
+        request_data = self.get_serializer(data=request.data)
+        request_data.is_valid(raise_exception=True)
+        coordinates = self.post_coordinates(post)
+        try:
+            candidates = search_place_candidates(coordinates, request_data.validated_data['q'])
+        except PostPlaceServiceError:
+            raise PostPlaceUnavailable() from None
+        return Response({'candidates': candidates})
+
+
+class PostPlaceTagAPIView(OwnedPostPlaceAPIView):
+    serializer_class = PostPlaceTagSerializer
+
+    def patch(self, request, pk):
+        post = self.get_object()
+        request_data = self.get_serializer(data=request.data)
+        request_data.is_valid(raise_exception=True)
+        place_id = request_data.validated_data['place_id']
+        target = self.get_queryset().filter(pk=post.pk)
+        manual_place = None
+        if place_id is not None:
+            coordinates = self.post_coordinates(post)
+            try:
+                manual_place = verify_manual_place(place_id, coordinates)
+            except PostPlaceServiceError:
+                raise PostPlaceUnavailable() from None
+            if manual_place is None:
+                raise ValidationError({'place_id': '投稿地点から250m以内の施設を確認できませんでした。'})
+            target = target.filter(latitude=post.latitude, longitude=post.longitude)
+
+        if not target.update(manual_place=manual_place):
+            raise NotFound('投稿が見つかりませんでした。')
+        post.manual_place = manual_place
+        return Response({'manual_place': post.manual_place, 'place_display': post.place_display})
 
 
 

@@ -53,6 +53,7 @@ class Post(models.Model):
 
     place_name = models.CharField(max_length=100, blank=True)
     place_attribution = models.JSONField(null=True, blank=True)
+    manual_place = models.JSONField(null=True, blank=True, editable=False)
 
     # 公開ステータス
     is_public = models.BooleanField(
@@ -79,6 +80,20 @@ class Post(models.Model):
     @property
     def is_admin_hidden(self):
         return self.admin_hidden_at is not None
+
+    @property
+    def place_display(self):
+        if self.manual_place is not None:
+            return {
+                'mode': 'manual',
+                'label': self.manual_place['name'],
+                'attribution': self.manual_place['attribution'],
+            }
+        return {
+            'mode': 'auto',
+            'label': f'{self.place_name}周辺' if self.place_name else 'この付近',
+            'attribution': self.place_attribution if self.place_name else None,
+        }
 
 
 class HiddenPost(models.Model):
