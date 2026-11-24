@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { PostList } from './PostList';
 import { PostDetailScreen } from '../screens/PostDetailScreen';
+import type { PostSortOrder } from '../sortPosts';
 import { usePostList } from '../usePostList';
 
 export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted, onVisibilityChanged }: {
@@ -12,6 +13,7 @@ export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted, onVis
   onVisibilityChanged: () => void;
 }) {
   const [postId, setPostId] = useState<number | null>(null);
+  const [order, setOrder] = useState<PostSortOrder>('newest');
   const list = usePostList(token, 'own', refreshKey);
   const returnToList = () => {
     setPostId(null);
@@ -29,7 +31,7 @@ export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted, onVis
       : <SafeAreaView style={styles.screen}>
           <View style={styles.header}><Text style={styles.title}>自分の投稿</Text>
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.close}><Text>閉じる</Text></Pressable></View>
-          <PostList scope="own" token={token} list={list} onSelectPost={setPostId} />
+          <PostList scope="own" token={token} list={list} order={order} onOrderChange={setOrder} onSelectPost={setPostId} />
         </SafeAreaView>}
   </Modal>;
 }

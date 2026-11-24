@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadPosts, loadPublicPosts } from './postService';
-import type { PostPin, SavedPost, ViewerCoordinates } from './postService';
+import type { PostPin, PostPlaceDisplay, SavedPost, ViewerCoordinates } from './postService';
 
 export type PostListScope = 'own' | 'public';
 
@@ -12,6 +12,7 @@ export function usePostList(token: string, scope: PostListScope, refreshKey: num
   const [retry, setRetry] = useState(0);
 
   const latestCoordinates = useRef(coordinates);
+  const pendingPlaceChanges = useRef<Map<number, PostPlaceDisplay> | null>(null);
   const hasCoordinates = coordinates !== undefined;
   useEffect(() => { latestCoordinates.current = coordinates; }, [coordinates]);
 
@@ -28,18 +29,26 @@ export function usePostList(token: string, scope: PostListScope, refreshKey: num
     const load = async () => {
       if (pending) return;
       pending = true;
+      // 保存より前に始まった一覧取得が、更新後の場所表示を上書きしないようにする。
+      const placeChanges = new Map<number, PostPlaceDisplay>();
+      pendingPlaceChanges.current = placeChanges;
       try {
+        let loadedPosts: SavedPost[];
         if (scope === 'public') {
           previous = latestCoordinates.current;
           const result = await loadPublicPosts(token, previous);
           if (!active) return;
           setPins(result.pins);
-          setPosts(result.posts);
+          loadedPosts = result.posts;
         } else {
-          const result = await loadPosts(token);
-          if (active) setPosts(result);
+          loadedPosts = await loadPosts(token);
         }
-        if (active) setError('');
+        if (!active) return;
+        setPosts(loadedPosts.map(post => {
+          const placeDisplay = placeChanges.get(post.id);
+          return placeDisplay ? { ...post, place_display: placeDisplay } : post;
+        }));
+        setError('');
       } catch (reason) {
         if (active) {
           setPosts([]);
@@ -47,6 +56,7 @@ export function usePostList(token: string, scope: PostListScope, refreshKey: num
         }
       } finally {
         pending = false;
+        if (pendingPlaceChanges.current === placeChanges) pendingPlaceChanges.current = null;
         if (active) setLoading(false);
       }
     };
@@ -64,7 +74,11 @@ export function usePostList(token: string, scope: PostListScope, refreshKey: num
   }, [token, scope, refreshKey, retry, hasCoordinates]);
 
   const refresh = () => { if (!loading) setRetry(value => value + 1); };
-  return { posts, pins, loading, error, refresh, refreshing: loading && retry > 0 };
+  const updatePlaceDisplay = (postId: number, placeDisplay: PostPlaceDisplay) => {
+    pendingPlaceChanges.current?.set(postId, placeDisplay);
+    setPosts(current => current.map(post => post.id === postId ? { ...post, place_display: placeDisplay } : post));
+  };
+  return { posts, pins, loading, error, refresh, updatePlaceDisplay, refreshing: loading && retry > 0 };
 }
 
 export type PostListState = ReturnType<typeof usePostList>;

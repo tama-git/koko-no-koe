@@ -5,6 +5,7 @@ export type MapPoint = { latitude: number; longitude: number };
 export type MapSnapshot = {
   current: MapPoint | null;
   displayPosition: DisplayPosition | null;
+  modeRevision: number;
   pins: (MapPoint & { id: number; nearby: boolean; isOwn?: boolean })[];
 };
 
@@ -99,6 +100,8 @@ export const openFreeMapDocument = `<!doctype html>
   let pinBounceStartedAt = null;
   let keepPostPinScale = false;
   let pendingPostPinCenter = null;
+  let pinModeRevision = initial?.modeRevision ?? 0;
+  let appliedPinModeRevision = null;
 
   function walkingStyle(style) {
     const poiClass = ['get', 'class'];
@@ -202,7 +205,9 @@ export const openFreeMapDocument = `<!doctype html>
     keepPostPinScale = id !== null && previousId === id && (keepPostPinScale || settled);
     selectedPostPinId = id;
     pinBounceStartedAt = null;
+    const shouldStopCentering = pendingPostPinCenter !== null;
     pendingPostPinCenter = null;
+    if (shouldStopCentering) map.stop();
     const previous = activePostPins.get(previousId);
     if (previous && previousId !== id) applyPostPinSelection(previousId, previous);
     const selected = activePostPins.get(id);
@@ -273,6 +278,7 @@ export const openFreeMapDocument = `<!doctype html>
     const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
     const zoom = Math.floor(map.getZoom());
     const clusters = clusterIndex.getClusters(bbox, zoom);
+    const renderedModeRevision = pinModeRevision;
 
     for (const cluster of clusters) {
       const [longitude, latitude] = cluster.geometry.coordinates;
@@ -290,6 +296,7 @@ export const openFreeMapDocument = `<!doctype html>
         el.tabIndex = 0;
 
         const expand = () => {
+          if (renderedModeRevision !== pinModeRevision || !activeMarkers.includes(marker)) return;
           const nextZoom = Math.min(clusterIndex.getClusterExpansionZoom(cluster.id), 20);
           map.flyTo({ center: [longitude, latitude], zoom: nextZoom, duration: 500 });
         };
@@ -316,11 +323,14 @@ export const openFreeMapDocument = `<!doctype html>
         const element = marker.getElement();
         element.classList.add('post-pin');
         element.setAttribute('role', 'button');
-        const label = pinProps.nearby ? '投稿詳細を開く' : '投稿までの距離を表示';
+        const label = pinProps.isOwn || pinProps.nearby ? '投稿詳細を開く' : '投稿までの距離を表示';
         element.setAttribute('aria-label', pinProps.isOwn ? '自分の投稿：' + label : label);
         element.tabIndex = 0;
 
-        const select = () => send({ type: 'pin', id: pinProps.id });
+        const select = () => {
+          if (renderedModeRevision !== pinModeRevision || activePostPins.get(pinProps.id) !== marker) return;
+          send({ type: 'pin', id: pinProps.id, modeRevision: renderedModeRevision });
+        };
         element.addEventListener('click', select);
         element.addEventListener('keydown', event => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -465,10 +475,23 @@ export const openFreeMapDocument = `<!doctype html>
   }
 
   function applySnapshot(snapshot) {
+    if (snapshot.modeRevision !== pinModeRevision) {
+      pinModeRevision = snapshot.modeRevision;
+      clusterIndex = null;
+      postPinCoordinates.clear();
+      selectPostPin(null);
+      clearMarkers();
+    }
     let issue;
     try { updateCurrent(snapshot.current, snapshot.displayPosition); } catch { issue = 'position'; }
     try { drawRange(); } catch { issue ||= 'range'; }
-    try { updatePins(snapshot); } catch { issue ||= 'pins'; }
+    try {
+      updatePins(snapshot);
+      appliedPinModeRevision = pinModeRevision;
+    } catch {
+      appliedPinModeRevision = null;
+      issue ||= 'pins';
+    }
     return issue;
   }
 
@@ -497,20 +520,24 @@ export const openFreeMapDocument = `<!doctype html>
       return;
     }
     if (command?.type === 'select-post-pin') {
+      if (command.modeRevision !== appliedPinModeRevision) return;
       if (command.id === null || Number.isSafeInteger(command.id)) selectPostPin(command.id);
       return;
     }
     if (command?.type === 'center-post-pin') {
+      if (command.modeRevision !== appliedPinModeRevision) return;
       if (Number.isSafeInteger(command.id) && Number.isFinite(command.bottomInset)) {
         centerPostPin(command.id, command.bottomInset);
       }
       return;
     }
     if (command?.type !== 'snapshot' || !Array.isArray(command.snapshot?.pins)) return;
+    if (!Number.isSafeInteger(command.snapshot.modeRevision) || command.snapshot.modeRevision < pinModeRevision) return;
     if (!Number.isSafeInteger(command.requestId) || command.requestId < latestRequestId) return;
     latestRequestId = command.requestId;
     const issue = applySnapshot(command.snapshot);
-    send({ type: issue ? 'overlay-error' : 'overlay-applied', issue, requestId: command.requestId });
+    send({ type: issue ? 'overlay-error' : 'overlay-applied', issue, requestId: command.requestId,
+      modeRevision: appliedPinModeRevision });
   };
 
   function receiveCommand(event) {
@@ -561,7 +588,7 @@ export const openFreeMapDocument = `<!doctype html>
         clearTimeout(timer);
         centered = Boolean(point);
         const issue = initial ? applySnapshot(initial) : undefined;
-        send({ type: 'ready', issue });
+        send({ type: 'ready', issue, modeRevision: appliedPinModeRevision });
       });
     } catch {
       clearTimeout(timer);

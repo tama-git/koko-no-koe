@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .images import InvalidPostPhoto, normalize_post_photo
 from .models import Post, PostReport
+from .place_tags import valid_place_id
 from django.urls import reverse
 
 class PostSerializer(serializers.ModelSerializer):
@@ -47,15 +48,35 @@ class PostSerializer(serializers.ModelSerializer):
         return data
 
 
-class PostDetailSerializer(PostSerializer):
-    can_report = serializers.SerializerMethodField()
+class PostListSerializer(PostSerializer):
+    place_display = serializers.ReadOnlyField()
 
     class Meta(PostSerializer.Meta):
-        fields = (*PostSerializer.Meta.fields, 'can_report', 'place_name', 'place_attribution')
-        read_only_fields = (*PostSerializer.Meta.read_only_fields, 'place_name', 'place_attribution')
+        fields = (*PostSerializer.Meta.fields, 'place_display')
+
+
+class PostDetailSerializer(PostListSerializer):
+    can_report = serializers.SerializerMethodField()
+
+    class Meta(PostListSerializer.Meta):
+        fields = (*PostListSerializer.Meta.fields, 'can_report', 'place_name', 'place_attribution', 'manual_place')
+        read_only_fields = (*PostListSerializer.Meta.read_only_fields, 'place_name', 'place_attribution', 'manual_place')
 
     def get_can_report(self, post):
         return post.is_public is True and not post.is_admin_hidden and post.user_id_id != self.context['request'].user.pk
+
+
+class PostPlaceSearchSerializer(serializers.Serializer):
+    q = serializers.CharField(max_length=100, allow_blank=True, default='')
+
+
+class PostPlaceTagSerializer(serializers.Serializer):
+    place_id = serializers.JSONField(allow_null=True)
+
+    def validate_place_id(self, value):
+        if value is not None and not valid_place_id(value):
+            raise serializers.ValidationError('有効な施設IDを指定してください。')
+        return value
 
 
 class PostReportSerializer(serializers.Serializer):

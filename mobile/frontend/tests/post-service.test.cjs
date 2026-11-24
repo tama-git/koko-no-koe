@@ -42,6 +42,7 @@ test('existing list and create endpoints and form fields are preserved', async (
 test('public feed sends viewer coordinates when supplied and returns pins separately', async (t) => {
   const service = await loadService('http://localhost:9999');
   const post = { id: 7, message: 'public', image: null, latitude: 35, longitude: 139, is_published: true, created_at: '2026-11-05T00:00:00Z' };
+  const place = { mode: 'auto', label: '南千歳周辺', attribution: { label: '© OpenStreetMap contributors', url: 'https://www.openstreetmap.org/copyright' } };
   const pins = [
     { id: 7, latitude: 35, longitude: 139, isOwn: true },
     { id: 8, latitude: 36, longitude: 139, isOwn: false },
@@ -56,11 +57,30 @@ test('public feed sends viewer coordinates when supplied and returns pins separa
     const latitude = options.headers['X-Viewer-Latitude'];
     const longitude = options.headers['X-Viewer-Longitude'];
     assert.deepEqual([latitude, longitude], latitude === undefined ? [undefined, undefined] : ['35', '139']);
-    return Response.json({ pins, posts: latitude === undefined ? [] : [{ ...post, is_own: true }] });
+    return Response.json({ pins, posts: latitude === undefined ? [] : [{ ...post, is_own: true, place_display: place }] });
   });
   assert.deepEqual(await service.loadPublicPosts('test-token'), { pins, posts: [] });
   assert.deepEqual(await service.loadPublicPosts('test-token', { latitude: 35, longitude: 139 }),
-    { pins, posts: [{ ...post, is_own: true }] });
+    { pins, posts: [{ ...post, is_own: true, place_display: place }] });
+});
+
+test('the own feed reads place display from the list response and falls back for older posts', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  const post = { id: 7, message: 'sample', image: null, latitude: 35, longitude: 139, is_published: false, created_at: '2026-11-05T00:00:00Z' };
+  const place = { mode: 'manual', label: '長野駅', attribution: { label: 'Provider', url: 'https://example.org/terms' } };
+  const fetch = t.mock.method(globalThis, 'fetch', async url => {
+    assert.equal(url, 'http://localhost:9999/api/posts/');
+    return Response.json([
+      { ...post, place_display: place },
+      { ...post, id: 8 },
+      { ...post, id: 9, place_display: { ...place, attribution: null } },
+    ]);
+  });
+  const [manual, legacy, invalid] = await service.loadPosts('test-token');
+  assert.deepEqual(service.getPostPlaceDisplay(manual), place);
+  assert.deepEqual(service.getPostPlaceDisplay(legacy), { mode: 'auto', label: 'この付近', attribution: null });
+  assert.deepEqual(service.getPostPlaceDisplay(invalid), service.getPostPlaceDisplay(legacy));
+  assert.equal(fetch.mock.callCount(), 1);
 });
 
 test('visibility update sends a JSON boolean and checks the saved setting', async (t) => {
@@ -147,6 +167,82 @@ test('post detail reads a place name and its attribution without accepting non-H
   assert.deepEqual(detail.place_attribution, source);
   attribution = { ...source, url: 'file:///local' };
   assert.deepEqual((await service.getPostById(7, 'test-token')).place_attribution, { ...source, url: null });
+});
+
+test('place candidates are fetched from Django initially and again with the submitted search term', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  const source = { label: '© OpenStreetMap contributors', url: 'https://www.openstreetmap.org/copyright' };
+  const facility = { place_id: 'facility-id', name: 'ユメリア', attribution: source, categories: ['leisure.park'], distance_m: 115 };
+  const calls = [];
+  let reply = Response.json({ candidates: [facility] });
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push({ url, options });
+    return reply;
+  });
+
+  assert.deepEqual(await service.searchPostPlaceCandidates(7, 'test-token'), [facility]);
+  reply = Response.json({ detail: '施設情報を取得できませんでした。' }, { status: 503 });
+  await assert.rejects(service.searchPostPlaceCandidates(7, 'test-token', ' ユメリア '),
+    error => error.status === 503 && error.message.includes('施設情報'));
+  reply = Response.json({ candidates: [] });
+  assert.deepEqual(await service.searchPostPlaceCandidates(7, 'test-token', 'ユメリア'), []);
+
+  assert.deepEqual(calls.map(call => JSON.parse(call.options.body)), [{ q: '' }, { q: 'ユメリア' }, { q: 'ユメリア' }]);
+  for (const { url, options } of calls) {
+    assert.equal(url, 'http://localhost:9999/api/posts/7/place-candidates/');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.Authorization, 'Bearer test-token');
+    assert.equal(options.headers['Content-Type'], 'application/json');
+    assert.equal(options.headers['X-Viewer-Latitude'], undefined);
+  }
+  reply = Response.json({ candidates: [{ ...facility, distance_m: 250.01 }] });
+  await assert.rejects(service.searchPostPlaceCandidates(7, 'test-token'), /施設候補の応答/);
+});
+
+test('the place display uses the confirmed manual name and restores the saved automatic name', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  const autoSource = { label: '© OpenAddresses contributors', url: 'https://openaddresses.io/' };
+  const manualSource = { label: '© OpenStreetMap contributors', url: 'https://www.openstreetmap.org/copyright' };
+  const legacy = { id: 7, message: 'test', image: null, latitude: 35, longitude: 139,
+    is_published: true, created_at: '2026-11-05T00:00:00Z', is_own: true,
+    place_name: '南七瀬', place_attribution: autoSource };
+  const manual = { manual_place: { place_id: 'canonical-id', name: '長野駅', attribution: manualSource },
+    place_display: { mode: 'manual', label: '長野駅', attribution: manualSource } };
+  const auto = { manual_place: null,
+    place_display: { mode: 'auto', label: '南七瀬周辺', attribution: autoSource } };
+  const body = [];
+  let post = legacy;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    if (options.method === 'GET') return Response.json(post);
+    assert.equal(url, 'http://localhost:9999/api/posts/7/place-tag/');
+    assert.equal(options.method, 'PATCH');
+    assert.equal(options.headers.Authorization, 'Bearer test-token');
+    const request = JSON.parse(options.body);
+    body.push(request);
+    return Response.json(request.place_id === null ? auto : manual);
+  });
+
+  assert.deepEqual(service.getPostPlaceDisplay(await service.getPostById(7, 'test-token')), auto.place_display);
+  const updated = await service.updatePostPlaceTag(7, 'test-token', 'candidate-id');
+  assert.deepEqual(updated, manual);
+  assert.deepEqual(service.getPostPlaceDisplay({ ...legacy, ...updated }), manual.place_display);
+  post = { ...legacy, ...updated };
+  assert.deepEqual(service.getPostPlaceDisplay(await service.getPostById(7, 'test-token')), manual.place_display);
+  const reset = await service.updatePostPlaceTag(7, 'test-token', null);
+  assert.deepEqual(service.getPostPlaceDisplay({ ...post, ...reset }), auto.place_display);
+  assert.deepEqual(body, [{ place_id: 'candidate-id' }, { place_id: null }]);
+});
+
+test('place tag failures give place-specific messages and never confirm an invalid update', async (t) => {
+  const service = await loadService('http://localhost:9999');
+  let reply = new TypeError('Network error');
+  t.mock.method(globalThis, 'fetch', async () => {
+    if (reply instanceof Error) throw reply;
+    return reply;
+  });
+  await assert.rejects(service.updatePostPlaceTag(7, 'test-token', 'facility-id'), /場所の変更結果/);
+  reply = Response.json({ manual_place: null, place_display: { mode: 'auto', label: '南七瀬周辺' } });
+  await assert.rejects(service.updatePostPlaceTag(7, 'test-token', 'facility-id'), /場所の変更結果/);
 });
 
 test('photo is attached as a named multipart file and detail uses the configured API', async (t) => {

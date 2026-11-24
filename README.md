@@ -35,13 +35,15 @@ koko-no-koe/
 
 ## 投稿場所の地名表示
 
-Djangoを起動するPCで [Geoapifyの管理画面](https://myprojects.geoapify.com/) からAPIキーを取得し、起動に使うPowerShellで設定します。入力は画面に表示されず、環境変数はこのターミナルとそこから起動するDjangoに引き継がれます。
+Djangoを起動するPCで [Geoapifyの管理画面](https://myprojects.geoapify.com/) からAPIキーを取得し、リポジトリのルートで初回設定を行います。入力欄にコピーしたキー全体を貼り付けます。入力は画面に表示されません。
 
 ```powershell
-$env:GEOAPIFY_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Geoapify APIキー' -AsSecureString)).Password
+.\start-dev.ps1 -ConfigureGeoapify
 ```
 
-キーはExpoの環境変数やGitに入れないでください。この変更を使うDBには投稿アプリのマイグレーション `0005_post_place` を適用してからDjangoを起動します。地名が空の投稿は「この付近」と表示し、新規投稿の地名取得に失敗した理由はDjangoのログで確認できます。
+キーはWindowsのユーザー・PCに紐づけて暗号化し、`%LOCALAPPDATA%\koko-no-koe\geoapify.clixml` に保存します。次回からは `.\start-dev.ps1` で保存済みキーを読み込み、Djangoの `GEOAPIFY_API_KEY` に渡します。既に同じPowerShellにキーを設定している場合は、その値を優先します。サブDjangoのPCでも初回設定を行ってください。キーを交換するときも `-ConfigureGeoapify` を使います。
+
+キーはExpoの環境変数やGitに入れないでください。設定済みのキーを使ってDjangoが投稿時や施設検索時にGeoapifyへ問い合わせます。この変更を使うDBには投稿アプリのマイグレーション `0005_post_place` を適用してからDjangoを起動します。地名が空の投稿は「この付近」と表示し、新規投稿の地名取得に失敗した理由はDjangoのログで確認できます。
 
 既存投稿の地名を補う場合は、`admin/backend` で対象件数を確認します。
 
