@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { ActionSheetIOS, Alert, BackHandler, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, Modal } from 'react-native';
+import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, Modal } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { deletePost, getPostById, getPostImage, getPostPlaceDisplay, PostApiError, hidePostApi, updatePostVisibility } from '../postService';
 import type { PostPlaceDisplay, SavedPost } from '../postService';
 import { formatPostDate } from '../formatPostDate';
 import { getCurrentLocation } from '../../location/getCurrentLocation';
-import { PostManagementMenu } from '../components/PostManagementMenu';
 import { PostPlaceCredits } from '../components/PostPlaceCredits';
 import { PostPlaceEditorScreen } from './PostPlaceEditorScreen';
 import { ReportScreen } from '../../reports/screens/ReportScreen';
@@ -87,28 +86,12 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   const [savingVisibility, setSavingVisibility] = useState(false);
   const [hiding, setHidden] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const [managementPostId, setManagementPostId] = useState<number | null>(null);
   const [editingPlacePostId, setEditingPlacePostId] = useState<number | null>(null);
   const deletionPending = useRef(false);
   const visibilityPending = useRef(false);
   const highidingPending = useRef(false);
   const isOwnPost = post?.id === postId && post.is_own === true;
   const canChangeVisibility = isOwnPost && Boolean(onVisibilityChanged) && post.is_admin_hidden !== true;
-  const showingManagement = !compact && isOwnPost && managementPostId === postId;
-
-  useEffect(() => {
-    if (compact) setManagementPostId(null);
-  }, [compact]);
-
-  useEffect(() => {
-    if (!showingManagement) return;
-    const back = BackHandler.addEventListener('hardwareBackPress', () => {
-      setManagementPostId(null);
-      return true;
-    });
-    return () => back.remove();
-  }, [showingManagement]);
-
   /**
    * サーバーから特定の投稿詳細データを取得する処理
    */
@@ -263,6 +246,32 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   
   const openPostActions = () => {
     if (Platform.OS === 'ios') {
+      if (isOwnPost) {
+        const options = [
+          ...(canChangeVisibility ? [post.is_published === true ? '本人のみ公開に変更' : '公開に変更'] : []),
+          '場所タグを編集',
+          ...(onDeleted ? ['投稿を削除'] : []),
+          'キャンセル',
+        ];
+        const cancelButtonIndex = options.length - 1;
+        ActionSheetIOS.showActionSheetWithOptions({
+          options,
+          cancelButtonIndex,
+          destructiveButtonIndex: onDeleted ? options.length - 2 : undefined,
+        }, index => {
+          let offset = 0;
+          if (canChangeVisibility && index === offset++) {
+            confirmVisibilityChange(post.is_published !== true);
+            return;
+          }
+          if (index === offset++) {
+            setEditingPlacePostId(postId);
+            return;
+          }
+          if (onDeleted && index === offset++) confirmDeletion();
+        });
+        return;
+      }
       ActionSheetIOS.showActionSheetWithOptions({
         options: ['通報', '非表示', 'キャンセル'],
         cancelButtonIndex: 2,     
@@ -270,6 +279,20 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
         if (index === 0) setReportOpen(true);
         if (index === 1) confirmHide();
       });
+      return;
+    }
+    if (isOwnPost) {
+      const visibilityLabel = post.is_published === true ? '公開' : post.is_published === false ? '本人のみ公開' : '未設定';
+      const message = `現在の公開範囲：${visibilityLabel}${post.is_admin_hidden === true ? '\n管理者により非表示' : ''}`;
+      Alert.alert('投稿の操作', message, [
+        ...(canChangeVisibility
+          ? [{ text: post.is_published === true ? '本人のみ公開に変更' : '公開に変更',
+              onPress: () => confirmVisibilityChange(post.is_published !== true) }]
+          : []),
+        { text: '場所タグを編集', onPress: () => setEditingPlacePostId(postId) },
+        ...(onDeleted ? [{ text: '投稿を削除', style: 'destructive' as const, onPress: confirmDeletion }] : []),
+        { text: 'キャンセル', style: 'cancel' as const },
+      ]);
       return;
     }
     Alert.alert('投稿の操作', undefined, [
@@ -289,13 +312,12 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
       </Pressable>
       {canOpenActions && (
         <Pressable accessibilityRole="button"
-          accessibilityLabel={isOwnPost ? (showingManagement ? '投稿管理メニューを閉じる' : '投稿を管理') : '投稿の操作'}
-          accessibilityState={{ disabled: actionsBusy, busy: actionsBusy, expanded: isOwnPost ? showingManagement : undefined }}
+          accessibilityLabel={isOwnPost ? '投稿を管理' : '投稿の操作'}
+          accessibilityState={{ disabled: actionsBusy, busy: actionsBusy }}
           disabled={actionsBusy} style={styles.actionButton}
           onPress={() => {
             if (sheet?.compact) sheet.onExpand();
-            if (isOwnPost) setManagementPostId(showingManagement ? null : postId);
-            else openPostActions();
+            openPostActions();
           }}>
           {actionsBusy ? <ActivityIndicator color="#2C6049" /> : <Text style={styles.actionText}>…</Text>}
         </Pressable>
@@ -337,11 +359,6 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   const postDate = formatPostDate(post.created_at);
   const hasMessage = post.message.trim().length > 0;
   const place = getPostPlaceDisplay(post);
-  const closeManagement = () => setManagementPostId(null);
-  const fromManagement = (action: () => void) => {
-    closeManagement();
-    action();
-  };
 
   return (
     <Container style={containerStyle}>
@@ -363,8 +380,8 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
       {sheet?.headerDivider}
       <View style={styles.body} pointerEvents={compact ? 'none' : 'auto'}>
         <ScrollView contentContainerStyle={[styles.scrollContent, sheet && styles.sheetScrollContent]}
-          accessibilityElementsHidden={compact || showingManagement}
-          importantForAccessibility={compact || showingManagement ? 'no-hide-descendants' : 'auto'}>
+          accessibilityElementsHidden={compact}
+          importantForAccessibility={compact ? 'no-hide-descendants' : 'auto'}>
           <View style={styles.card}>
             <View style={styles.placeHeading}>
               <Text style={styles.placeLabel}>投稿場所</Text>
@@ -405,14 +422,6 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
             {place.attribution && <PostPlaceCredits sources={[place.attribution]} compact />}
           </View>
         </ScrollView>
-        {showingManagement && (
-          <PostManagementMenu visibility={post.is_published} adminHidden={post.is_admin_hidden === true}
-            onChangeVisibility={canChangeVisibility
-              ? () => fromManagement(() => confirmVisibilityChange(post.is_published !== true)) : undefined}
-            onEditPlace={() => fromManagement(() => setEditingPlacePostId(postId))}
-            onDelete={onDeleted ? () => fromManagement(confirmDeletion) : undefined}
-            onClose={closeManagement} />
-        )}
       </View>
     </Container>
   );
