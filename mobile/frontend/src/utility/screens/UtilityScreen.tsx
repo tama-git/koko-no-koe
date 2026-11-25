@@ -4,14 +4,16 @@ import { ChangePasswordScreen } from './ChangePasswordScreen';
 import { DeleteAccountScreen } from './DeleteAccountScreen';
 import { HelpScreen } from './HelpScreen';
 import { ContactScreen } from './ContactScreen';
+import { uiColors } from '../../shared/uiColors';
 
 type Props = {
   onLogout: () => Promise<void>;
+  onOpenTutorial: () => void;
   token: string;
   user: { name: string; email: string };
 };
 
-export function UtilityScreen({ onLogout, token, user }: Props) {
+export function UtilityScreen({ onLogout, onOpenTutorial, token, user }: Props) {
   const [screen, setScreen] = useState<'changePassword' | 'deleteAccount' | 'help' | 'contact' | null>(null);
   const closeScreen = () => setScreen(null);
   const screenProps = { token, onClose: closeScreen };
@@ -45,6 +47,10 @@ export function UtilityScreen({ onLogout, token, user }: Props) {
           {/* ヘルプ */}
           <Pressable style={styles.menuItem} onPress={() => setScreen('help')}>
             <Text style={styles.menuText}>ヘルプ</Text>
+          </Pressable>
+
+          <Pressable accessibilityRole="button" style={styles.menuItem} onPress={onOpenTutorial}>
+            <Text style={styles.menuText}>チュートリアル</Text>
           </Pressable>
 
           {/* 問い合わせ */}
@@ -81,25 +87,25 @@ const styles = StyleSheet.create({
   userCard: { 
     width: '100%', 
     maxWidth: 440, 
-    backgroundColor: '#FFFFFF', 
+    backgroundColor: uiColors.surface,
     borderRadius: 12, 
     padding: 16, 
     marginBottom: 24, 
     borderWidth: 1, 
-    borderColor: '#E2EBE0' 
+    borderColor: uiColors.border
   },
-  userInfoLabel: { fontSize: 12, color: '#7D8C80', marginBottom: 4 },
-  userEmail: { fontSize: 13, color: '#5C7A6B' },
+  userInfoLabel: { fontSize: 12, color: uiColors.primary, marginBottom: 4 },
+  userEmail: { fontSize: 13, color: uiColors.primary },
   menuContainer: { width: '100%', maxWidth: 440 },
   menuItem: { 
-    backgroundColor: '#FFFFFF', 
+    backgroundColor: uiColors.surface,
     padding: 16, 
     borderRadius: 10, 
     marginBottom: 10, 
     borderWidth: 1, 
-    borderColor: '#E2EBE0' 
+    borderColor: uiColors.border
   },
-  menuText: { fontSize: 15, color: '#1D4030', fontWeight: '600' },
+  menuText: { fontSize: 15, color: uiColors.text, fontWeight: '600' },
   logoutItem: { borderColor: '#FEB2B2', backgroundColor: '#FFF5F5' },
   logoutText: { fontSize: 15, color: '#C53030', fontWeight: '600' },
 });

@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput,
 import { AppScreen } from '../../shared/components/AppScreen';
 import type { AuthController } from '../useAuth';
 import { styles } from '../styles';
+import { uiColors } from '../../shared/uiColors';
 
 type Props = { auth: AuthController; title: string };
 
@@ -47,7 +48,7 @@ export function AuthForm({ auth, title }: Props) {
                   setMessage('');
                 }}
                 placeholder="example@email.com"
-                placeholderTextColor="#9AA79D"
+                placeholderTextColor={uiColors.primary}
                 style={[styles.input, errors.email && styles.inputError]}
                 value={email}
                 editable={!busy}
@@ -69,7 +70,7 @@ export function AuthForm({ auth, title }: Props) {
                   setMessage('');
                 }}
                 placeholder="パスワードを入力"
-                placeholderTextColor="#9AA79D"
+                placeholderTextColor={uiColors.primary}
                 secureTextEntry={!showPassword}
                 style={[styles.input, errors.password && styles.inputError]}
                 value={password}
@@ -97,7 +98,7 @@ export function AuthForm({ auth, title }: Props) {
                       setMessage('');
                     }}
                     placeholder="もう一度入力"
-                    placeholderTextColor="#9AA79D"
+                    placeholderTextColor={uiColors.primary}
                     secureTextEntry={!showPassword}
                     style={[styles.input, errors.confirmPassword && styles.inputError]}
                     value={confirmPassword}

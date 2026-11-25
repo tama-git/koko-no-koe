@@ -9,6 +9,7 @@ import {
   ReactionState,
   sendReaction,
 } from '../likeService';
+import { uiColors } from '../../shared/uiColors';
 
 type Props = {
   /** リアクション対象の投稿ID */
@@ -98,10 +99,10 @@ export function ReactionBar({ postId, token }: Props) {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  btn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, borderWidth: 1, borderColor: '#ccc', backgroundColor: '#f5f5f5' },
-  active: { borderColor: '#4a90e2', backgroundColor: '#e8f0fe' }, // 選択中は青系に変える
+  btn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, borderWidth: 1, borderColor: uiColors.border, backgroundColor: uiColors.background },
+  active: { borderColor: uiColors.primary, backgroundColor: uiColors.selectionFill },
   emoji: { fontSize: 18 },
-  count: { marginLeft: 4, fontSize: 13, color: '#555' },
+  count: { marginLeft: 4, fontSize: 13, color: uiColors.text },
   loader: { marginTop: 8 },
   error: { marginTop: 8, fontSize: 12, color: '#c00' },
 });

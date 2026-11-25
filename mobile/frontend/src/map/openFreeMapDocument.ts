@@ -1,14 +1,16 @@
 import type { DisplayPosition } from '../location/displayPosition';
 import { RADIUS_METERS } from './filterNearbyPosts';
+import { uiColors } from '../shared/uiColors';
 
 export type MapPoint = { latitude: number; longitude: number };
 export type MapSnapshot = {
   current: MapPoint | null;
   displayPosition: DisplayPosition | null;
   modeRevision: number;
-  pins: (MapPoint & { id: number; nearby: boolean; isOwn?: boolean })[];
+  pins: (MapPoint & { id: number; nearby: boolean; withinRadius: boolean; isOwn?: boolean })[];
 };
 
+const POST_PIN_COLOR = '#627388';
 const POST_PIN_BOUNCE_MS = 500;
 const POST_PIN_CLUSTER_MAX_ZOOM = 16;
 const POST_PIN_FOCUS_ZOOM = POST_PIN_CLUSTER_MAX_ZOOM + 1;
@@ -26,7 +28,7 @@ export const openFreeMapDocument = `<!doctype html>
           integrity="sha384-GfxBM9x46BaAFxtCq39Fxir8fNZ4VDnwgfi6Kzi5/F1tAFsm0amuuV8kd+Pxzuf/" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/supercluster@8.0.1/dist/supercluster.min.js" crossorigin="anonymous"></script>
   <style>
-    html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #edf0ec; }
+    html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; background: ${uiColors.background}; }
     #range { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
     .current-dot { width: 18px; height: 18px; }
     .current-bearing { position: absolute; inset: 0; pointer-events: none; }
@@ -46,22 +48,52 @@ export const openFreeMapDocument = `<!doctype html>
       68% { transform: translateY(0) scale(var(--post-pin-bounce-scale, 1)); }
       100% { transform: translateY(0) scale(1.2); }
     }
-    @media (prefers-reduced-motion: reduce) {
-      .post-pin-bounce > svg { animation: none; }
-    }
-    .cluster-marker {
-      background: #2C6049;
-      color: #ffffff;
-      border-radius: 50%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      font-weight: 700;
-      font-size: 13px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-      border: 2px solid #ffffff;
+    .post-pin-bubble, .cluster-marker {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
       cursor: pointer;
       user-select: none;
+    }
+    .post-pin-bubble > svg {
+      align-self: end;
+      display: block;
+      width: 32px;
+      height: 37px;
+      color: ${POST_PIN_COLOR};
+      overflow: visible;
+      filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .14));
+      transform-origin: 50% 100%;
+      transition: transform 180ms ease-out, color 180ms ease-out;
+    }
+    .post-pin-bubble-shape {
+      fill: #ffffff;
+      stroke: ${POST_PIN_COLOR};
+      stroke-width: 1.7px;
+      stroke-linejoin: round;
+      transition: fill 180ms ease-out;
+    }
+    .post-pin-bubble.post-pin-selected > svg { color: #ffffff; transform: scale(1.12); }
+    .post-pin-bubble.post-pin-selected .post-pin-bubble-shape { fill: ${POST_PIN_COLOR}; }
+    @media (prefers-reduced-motion: reduce) {
+      .post-pin-bounce > svg { animation: none; }
+      .post-pin-bubble > svg, .post-pin-bubble-shape { transition: none; }
+    }
+    .cluster-marker-count {
+      box-sizing: border-box;
+      min-width: 34px;
+      width: max-content;
+      aspect-ratio: 1;
+      padding: 0 3px;
+      background: #ffffff;
+      color: ${POST_PIN_COLOR};
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font: 700 14px system-ui, sans-serif;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, .14);
+      border: 1.7px solid ${POST_PIN_COLOR};
     }
   </style>
 </head>
@@ -179,8 +211,10 @@ export const openFreeMapDocument = `<!doctype html>
     const element = marker.getElement();
     const selected = id === selectedPostPinId;
     element.classList.toggle('post-pin-selected', selected);
-    element.classList.toggle('post-pin-arrived', selected && (keepPostPinScale || pinBounceStartedAt !== null));
     element.setAttribute('aria-pressed', String(selected));
+    if (element.classList.contains('post-pin-bubble')) return;
+
+    element.classList.toggle('post-pin-arrived', selected && (keepPostPinScale || pinBounceStartedAt !== null));
     const restarting = selected && element.classList.contains('post-pin-bounce');
     element.classList.remove('post-pin-bounce');
     if (!selected || pinBounceStartedAt === null) return;
@@ -270,6 +304,22 @@ export const openFreeMapDocument = `<!doctype html>
     activePostPins.clear();
   }
 
+  function createPostMarker({ withinRadius, isOwn }) {
+    if (!withinRadius) return new maplibregl.Marker({ color: isOwn ? '#598879' : '#68737E' });
+
+    const element = document.createElement('div');
+    element.className = 'post-pin-bubble';
+    const symbol = isOwn
+      ? '<circle cx="16" cy="11.5" r="3.5"/>' +
+        '<path d="M9.5 23v-2.8a6.5 6.5 0 0 1 13 0V23Z"/>'
+      : '<path d="M9.5 13h13m-13 5.5h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+    element.innerHTML = '<svg viewBox="0 0 32 37" aria-hidden="true" fill="currentColor">' +
+      '<path class="post-pin-bubble-shape" d="M7 2h18a6 6 0 0 1 6 6v15a6 6 0 0 1-6 6h-4l-5 7.15-5-7.15H7a6 6 0 0 1-6-6V8a6 6 0 0 1 6-6Z"/>' +
+      symbol + '</svg>';
+    // MapLibreは要素の下端を座標に合わせ、拡大は内側のSVGにだけ適用する。
+    return new maplibregl.Marker({ element, anchor: 'bottom' });
+  }
+
   function updateClusterMarkers() {
     if (!map || !clusterIndex) return;
     clearMarkers();
@@ -285,12 +335,12 @@ export const openFreeMapDocument = `<!doctype html>
       const { cluster: isCluster, point_count: pointCount } = cluster.properties;
 
       if (isCluster) {
-        const size = Math.min(36 + Math.floor(pointCount / 5) * 4, 56);
         const el = document.createElement('div');
         el.className = 'cluster-marker';
-        el.style.width = size + 'px';
-        el.style.height = size + 'px';
-        el.textContent = String(pointCount);
+        const count = document.createElement('span');
+        count.className = 'cluster-marker-count';
+        count.textContent = String(pointCount);
+        el.appendChild(count);
         el.setAttribute('role', 'button');
         el.setAttribute('aria-label', pointCount + '件の投稿を拡大表示');
         el.tabIndex = 0;
@@ -315,11 +365,7 @@ export const openFreeMapDocument = `<!doctype html>
         activeMarkers.push(marker);
       } else {
         const pinProps = cluster.properties;
-        const marker = new maplibregl.Marker({
-          color: pinProps.isOwn
-            ? (pinProps.nearby ? '#1B8553' : '#51745F')
-            : (pinProps.nearby ? '#B43A37' : '#446C9A'),
-        });
+        const marker = createPostMarker(pinProps);
         const element = marker.getElement();
         element.classList.add('post-pin');
         element.setAttribute('role', 'button');
@@ -354,6 +400,7 @@ export const openFreeMapDocument = `<!doctype html>
         cluster: false,
         id: pin.id,
         nearby: pin.nearby,
+        withinRadius: pin.withinRadius,
         isOwn: Boolean(pin.isOwn),
       },
       geometry: {

@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { uiColors } from '../../shared/uiColors';
 
 const options = [
   { value: true, label: '公開', description: '他の会員も閲覧できます' },
@@ -36,16 +37,16 @@ export function PostVisibilityOptions({ value, onChange, disabled = false }: {
 
 const styles = StyleSheet.create({
   section: { gap: 8, marginBottom: 20 },
-  heading: { fontSize: 14, fontWeight: '600', color: '#395647' },
+  heading: { fontSize: 14, fontWeight: '600', color: uiColors.primary },
   row: { flexDirection: 'row', gap: 8 },
   option: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    minHeight: 48, padding: 8, borderWidth: 1, borderColor: '#DCE6DA', borderRadius: 10, backgroundColor: '#FBFCFA',
+    minHeight: 48, padding: 8, borderWidth: 1, borderColor: uiColors.border, borderRadius: 10, backgroundColor: uiColors.surface,
   },
-  checked: { borderColor: '#2C6049', backgroundColor: '#F3F7F4' },
-  radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: '#718477', alignItems: 'center', justifyContent: 'center' },
-  radioChecked: { borderColor: '#2C6049' },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2C6049' },
-  label: { flexShrink: 1, fontSize: 14, fontWeight: '600', color: '#1D4030' },
-  description: { fontSize: 12, color: '#526658' },
+  checked: { borderColor: uiColors.primary, backgroundColor: uiColors.tint },
+  radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: uiColors.primary, alignItems: 'center', justifyContent: 'center' },
+  radioChecked: { borderColor: uiColors.primary },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: uiColors.primary },
+  label: { flexShrink: 1, fontSize: 14, fontWeight: '600', color: uiColors.text },
+  description: { fontSize: 12, color: uiColors.primary },
 });

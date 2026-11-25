@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, SafeAreaView, Pressable } from 'react-native';
+import { uiColors } from '../../shared/uiColors';
 
 type Props = {
   token: string;
@@ -91,7 +92,7 @@ export function HelpScreen({ token, onClose }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: uiColors.background,
   },
   header: { 
     paddingHorizontal: 16, 
@@ -103,7 +104,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center' 
   },
   backText: { 
-    color: '#2C6049', 
+    color: uiColors.primary,
     fontSize: 15, 
     fontWeight: '700' 
   },
@@ -113,15 +114,15 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: uiColors.text,
     marginBottom: 16,
   },
   faqCard: {
-    backgroundColor: '#fff',
+    backgroundColor: uiColors.surface,
     borderRadius: 8,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: uiColors.border,
     overflow: 'hidden',
   },
   questionButton: {
@@ -133,23 +134,23 @@ const styles = StyleSheet.create({
   questionText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#212529',
+    color: uiColors.text,
     flex: 1,
     paddingRight: 8,
   },
   arrow: {
     fontSize: 12,
-    color: '#6c757d',
+    color: uiColors.primary,
   },
   answerBox: {
-    backgroundColor: '#f1f3f5',
+    backgroundColor: uiColors.tint,
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e9ecef',
+    borderTopColor: uiColors.border,
   },
   answerText: {
     fontSize: 14,
-    color: '#495057',
+    color: uiColors.primary,
     lineHeight: 20,
   },
   contactSection: {
@@ -159,6 +160,6 @@ const styles = StyleSheet.create({
   },
   contactNotice: {
     fontSize: 14,
-    color: '#6c757d',
+    color: uiColors.primary,
   },
 });

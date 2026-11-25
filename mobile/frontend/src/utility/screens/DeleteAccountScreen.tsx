@@ -5,6 +5,7 @@
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppScreen } from '../../shared/components/AppScreen';
 import { useDeleteAccount } from '../useDeleteAccount';
+import { uiColors } from '../../shared/uiColors';
 
 type Props = {
   token: string;       // ログイン中のトークン（UtilityScreen 経由で渡される）
@@ -58,7 +59,7 @@ export function DeleteAccountScreen({ token, onClose, onDeleted }: Props) {
                 onChangeText={setPassword}
                 onSubmitEditing={confirmAndSubmit} // キーボードの完了ボタンでも確認 Alert を出す
                 placeholder="パスワードを入力"
-                placeholderTextColor="#9AA79D"
+                placeholderTextColor={uiColors.primary}
                 returnKeyType="done"
                 secureTextEntry
                 style={[styles.input, passwordError ? styles.inputError : null]}
@@ -91,19 +92,19 @@ export function DeleteAccountScreen({ token, onClose, onDeleted }: Props) {
 const styles = StyleSheet.create({
   header: { paddingHorizontal: 12, alignItems: 'flex-start' },
   backButton: { minHeight: 44, paddingHorizontal: 12, justifyContent: 'center' },
-  backText: { color: '#2C6049', fontSize: 15, fontWeight: '700' },
+  backText: { color: uiColors.primary, fontSize: 15, fontWeight: '700' },
   keyboard: { flex: 1 },
   container: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 32, paddingBottom: 32, alignItems: 'center' },
   content: { width: '100%', maxWidth: 440 },
-  title: { color: '#1C3D2D', fontSize: 25, fontWeight: '700', marginBottom: 12 },
+  title: { color: uiColors.text, fontSize: 25, fontWeight: '700', marginBottom: 12 },
   warning: { color: '#AA4B3F', fontSize: 13, lineHeight: 20, marginBottom: 20 },
-  card: { backgroundColor: '#FFFFFF' },
-  label: { color: '#395647', fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 7 },
-  input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: '#DCE6DA', borderRadius: 10, backgroundColor: '#FBFCFA', color: '#1D4030', fontSize: 15 },
+  card: { backgroundColor: uiColors.background },
+  label: { color: uiColors.primary, fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 7 },
+  input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: uiColors.border, borderRadius: 10, backgroundColor: uiColors.surface, color: uiColors.text, fontSize: 15 },
   inputError: { borderColor: '#BC6A5C' },
   error: { color: '#AA4B3F', fontSize: 12, lineHeight: 18, marginTop: 7 },
   button: { height: 52, backgroundColor: '#C53030', borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 25 },
   buttonPressed: { opacity: 0.8 },
-  buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  buttonText: { color: uiColors.surface, fontSize: 15, fontWeight: '700' },
   message: { color: '#705C38', backgroundColor: '#FCF6E9', overflow: 'hidden', borderRadius: 8, fontSize: 12, lineHeight: 19, marginTop: 14, padding: 12 },
 });

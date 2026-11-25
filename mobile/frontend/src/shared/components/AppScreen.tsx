@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import type { PropsWithChildren } from 'react';
 import { SafeAreaView, StyleSheet, View } from 'react-native';
+import { uiColors } from '../uiColors';
 
 type Props = PropsWithChildren<{ edgeToEdge?: boolean }>;
 
@@ -16,5 +17,5 @@ export function AppScreen({ children, edgeToEdge = false }: Props) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: uiColors.background },
 });

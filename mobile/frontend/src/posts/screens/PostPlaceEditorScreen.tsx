@@ -7,6 +7,7 @@ import { AppScreen } from '../../shared/components/AppScreen';
 import { PostPlaceCredits } from '../components/PostPlaceCredits';
 import { searchPostPlaceCandidates, updatePostPlaceTag } from '../postService';
 import type { PostPlaceCandidate, PostPlaceDisplay, PostPlaceTag } from '../postService';
+import { uiColors } from '../../shared/uiColors';
 
 const categoryLabels = [
   ['entertainment.museum', '博物館・美術館'],
@@ -128,7 +129,7 @@ export function PostPlaceEditorScreen({ postId, token, currentPlace, selectedPla
             <View style={styles.searchRow}>
               <TextInput accessibilityLabel="施設名" value={input} onChangeText={setInput}
                 editable={!saving} maxLength={100} placeholder="施設名を入力"
-                placeholderTextColor="#5C7A6B" returnKeyType="search" style={styles.input}
+                placeholderTextColor={uiColors.primary} returnKeyType="search" style={styles.input}
                 onSubmitEditing={() => search(input)} />
               <Pressable accessibilityRole="button" disabled={searchDisabled} onPress={() => search(input)}
                 style={[styles.searchButton, searchDisabled && styles.disabled]}>
@@ -143,8 +144,8 @@ export function PostPlaceEditorScreen({ postId, token, currentPlace, selectedPla
                 </Pressable>
               </View>
             )}
-            {saving && <ActivityIndicator accessibilityLabel="場所を保存中" color="#2C6049" />}
-            {results.state === 'loading' && <ActivityIndicator accessibilityLabel="施設候補を読み込み中" color="#2C6049" />}
+            {saving && <ActivityIndicator accessibilityLabel="場所を保存中" color={uiColors.primary} />}
+            {results.state === 'loading' && <ActivityIndicator accessibilityLabel="施設候補を読み込み中" color={uiColors.primary} />}
             {results.state === 'error' && (
               <View>
                 <Text accessibilityLiveRegion="polite" style={styles.error}>{results.message}</Text>
@@ -174,30 +175,30 @@ export function PostPlaceEditorScreen({ postId, token, currentPlace, selectedPla
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F7F9F7' },
+  screen: { flex: 1, backgroundColor: uiColors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#DCE6DA',
+    paddingHorizontal: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: uiColors.border,
   },
-  title: { color: '#1C3D2D', fontSize: 20, fontWeight: '700' },
+  title: { color: uiColors.text, fontSize: 20, fontWeight: '700' },
   content: { padding: 20, gap: 12, width: '100%', maxWidth: 480, alignSelf: 'center' },
   currentPlace: { gap: 4 },
-  name: { color: '#1D4030', fontSize: 16, fontWeight: '600' },
-  secondary: { color: '#5C7A6B', fontSize: 14 },
+  name: { color: uiColors.text, fontSize: 16, fontWeight: '600' },
+  secondary: { color: uiColors.primary, fontSize: 14 },
   textButton: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
-  buttonText: { color: '#2C6049', fontSize: 15, fontWeight: '700' },
+  buttonText: { color: uiColors.primary, fontSize: 15, fontWeight: '700' },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   input: {
-    flex: 1, minHeight: 44, paddingHorizontal: 12, backgroundColor: '#FFFFFF',
-    borderWidth: 1, borderColor: '#AABAAE', borderRadius: 8, color: '#1D4030', fontSize: 16,
+    flex: 1, minHeight: 44, paddingHorizontal: 12, backgroundColor: uiColors.surface,
+    borderWidth: 1, borderColor: uiColors.primary, borderRadius: 8, color: uiColors.text, fontSize: 16,
   },
-  searchButton: { backgroundColor: '#2C6049', borderRadius: 8, minHeight: 44, justifyContent: 'center', paddingHorizontal: 16 },
-  searchButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  searchButton: { backgroundColor: uiColors.primaryFill, borderRadius: 8, minHeight: 44, justifyContent: 'center', paddingHorizontal: 16 },
+  searchButtonText: { color: uiColors.onPrimary, fontSize: 15, fontWeight: '700' },
   disabled: { opacity: 0.6 },
   error: { color: '#A82B25', fontSize: 14 },
   candidate: {
-    backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#DCE6DA',
+    backgroundColor: uiColors.surface, borderRadius: 8, borderWidth: 1, borderColor: uiColors.border,
     padding: 12, gap: 4, minHeight: 44,
   },
-  selectedCandidate: { backgroundColor: '#EAF3EC', borderColor: '#2C6049' },
+  selectedCandidate: { backgroundColor: uiColors.tint, borderColor: uiColors.primary },
 });

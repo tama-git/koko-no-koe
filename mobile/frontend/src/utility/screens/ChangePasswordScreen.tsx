@@ -5,6 +5,7 @@ import { useRef, type ComponentRef } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppScreen } from '../../shared/components/AppScreen';
 import { useChangePassword } from '../useChangePassword';
+import { uiColors } from '../../shared/uiColors';
 
 type Props = {
   token: string;    // ログイン中のトークン（HomeScreen → UtilityScreen 経由で渡される）
@@ -52,7 +53,7 @@ export function ChangePasswordScreen({ token, onClose }: Props) {
                 onSubmitEditing={() => newPasswordRef.current?.focus()}
                 onChangeText={setCurrentPassword}
                 placeholder="現在のパスワードを入力"
-                placeholderTextColor="#9AA79D"
+                placeholderTextColor={uiColors.primary}
                 secureTextEntry
                 style={[styles.input, errors.currentPassword && styles.inputError]}
                 value={currentPassword}
@@ -72,7 +73,7 @@ export function ChangePasswordScreen({ token, onClose }: Props) {
                 onSubmitEditing={() => confirmPasswordRef.current?.focus()}
                 onChangeText={setNewPassword}
                 placeholder="新しいパスワードを入力"
-                placeholderTextColor="#9AA79D"
+                placeholderTextColor={uiColors.primary}
                 secureTextEntry
                 style={[styles.input, errors.newPassword && styles.inputError]}
                 value={newPassword}
@@ -93,7 +94,7 @@ export function ChangePasswordScreen({ token, onClose }: Props) {
                 onSubmitEditing={handleSubmit} // 最後の欄で Enter を押したら送信
                 onChangeText={setConfirmPassword}
                 placeholder="もう一度入力"
-                placeholderTextColor="#9AA79D"
+                placeholderTextColor={uiColors.primary}
                 secureTextEntry
                 style={[styles.input, errors.confirmPassword && styles.inputError]}
                 value={confirmPassword}
@@ -124,19 +125,19 @@ export function ChangePasswordScreen({ token, onClose }: Props) {
 const styles = StyleSheet.create({
   header: { paddingHorizontal: 12, alignItems: 'flex-start' },
   backButton: { minHeight: 44, paddingHorizontal: 12, justifyContent: 'center' },
-  backText: { color: '#2C6049', fontSize: 15, fontWeight: '700' },
+  backText: { color: uiColors.primary, fontSize: 15, fontWeight: '700' },
   keyboard: { flex: 1 },
   container: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 32, paddingBottom: 32, alignItems: 'center' },
   content: { width: '100%', maxWidth: 440 },
-  title: { color: '#1C3D2D', fontSize: 25, fontWeight: '700', marginBottom: 12 },
-  card: { backgroundColor: '#FFFFFF' },
-  label: { color: '#395647', fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 7 },
-  input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: '#DCE6DA', borderRadius: 10, backgroundColor: '#FBFCFA', color: '#1D4030', fontSize: 15 },
+  title: { color: uiColors.text, fontSize: 25, fontWeight: '700', marginBottom: 12 },
+  card: { backgroundColor: uiColors.background },
+  label: { color: uiColors.primary, fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 7 },
+  input: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: uiColors.border, borderRadius: 10, backgroundColor: uiColors.surface, color: uiColors.text, fontSize: 15 },
   inputError: { borderColor: '#BC6A5C' },
-  hint: { color: '#7D8C80', fontSize: 11, lineHeight: 17, marginTop: 7 },
+  hint: { color: uiColors.primary, fontSize: 11, lineHeight: 17, marginTop: 7 },
   error: { color: '#AA4B3F', fontSize: 12, lineHeight: 18, marginTop: 7 },
-  button: { height: 52, backgroundColor: '#2C6049', borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 25 },
+  button: { height: 52, backgroundColor: uiColors.primaryFill, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 25 },
   buttonPressed: { opacity: 0.8 },
-  buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  buttonText: { color: uiColors.onPrimary, fontSize: 15, fontWeight: '700' },
   message: { color: '#705C38', backgroundColor: '#FCF6E9', overflow: 'hidden', borderRadius: 8, fontSize: 12, lineHeight: 19, marginTop: 14, padding: 12 },
 });

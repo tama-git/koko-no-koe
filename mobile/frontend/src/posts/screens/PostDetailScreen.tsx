@@ -11,6 +11,7 @@ import { PostPlaceCredits } from '../components/PostPlaceCredits';
 import { PostPlaceEditorScreen } from './PostPlaceEditorScreen';
 import { ReportScreen } from '../../reports/screens/ReportScreen';
 import { ReactionBar } from '../../likes/components/ReactionBar';
+import { uiColors } from '../../shared/uiColors';
 
 const locationUnavailable = '現在地を取得できませんでした。もう一度お試しください。';
 const cannotReadPost = 'この投稿は現在地から閲覧できません。';
@@ -319,7 +320,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
             if (sheet?.compact) sheet.onExpand();
             openPostActions();
           }}>
-          {actionsBusy ? <ActivityIndicator color="#2C6049" /> : <Text style={styles.actionText}>…</Text>}
+          {actionsBusy ? <ActivityIndicator color={uiColors.primary} /> : <Text style={styles.actionText}>…</Text>}
         </Pressable>
       )}
     </View>
@@ -331,7 +332,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
       <Container style={containerStyle}>
         {header}
         {sheet?.headerDivider}
-        {!compact && <View style={styles.loaderContainer}><ActivityIndicator size="large" color="#2C6049" /></View>}
+        {!compact && <View style={styles.loaderContainer}><ActivityIndicator size="large" color={uiColors.primary} /></View>}
       </Container>
     );
   }
@@ -387,7 +388,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
               <Text style={styles.placeLabel}>投稿場所</Text>
               <View style={styles.placeNameRow}>
                 <Svg accessible={false} style={styles.placePin} width={16} height={16} viewBox="0 0 24 24"
-                  fill="none" stroke="#2C6049" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  fill="none" stroke={uiColors.primary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <Path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
                   <Circle cx={12} cy={10} r={2.5} />
                 </Svg>
@@ -410,7 +411,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
             ) : imageUri ? (
               <PostDetailPhoto key={post.id} uri={imageUri}
                 onError={() => { setImageUri(null); setImageError('写真を表示できませんでした。'); }} />
-            ) : <ActivityIndicator accessibilityLabel="写真を取得中" color="#2C6049" />)}
+            ) : <ActivityIndicator accessibilityLabel="写真を取得中" color={uiColors.primary} />)}
 
             {/* リアクションバー（公開投稿のみ表示） */}
             {post.is_published === true && post.is_admin_hidden !== true && (
@@ -432,7 +433,7 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
  */
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  standalone: { backgroundColor: '#FFFFFF' },
+  standalone: { backgroundColor: uiColors.surface },
   loaderContainer: {
     flexGrow: 1,
     padding: 16,
@@ -454,8 +455,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 10,
     gap: 12,
-    backgroundColor: '#FFFFFF',
-    borderColor: '#DDDAD2',
+    backgroundColor: uiColors.surface,
+    borderColor: uiColors.border,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 12,
   },
@@ -463,19 +464,19 @@ const styles = StyleSheet.create({
   sheetHeader: { paddingHorizontal: 20 },
   standaloneHeader: { maxWidth: 472, alignSelf: 'center', paddingHorizontal: 12 },
   placeHeading: { gap: 3 },
-  placeLabel: { fontSize: 12, fontWeight: '600', color: '#53645A' },
+  placeLabel: { fontSize: 12, fontWeight: '600', color: uiColors.primary },
   placeNameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   placePin: { flexShrink: 0, marginTop: 3 },
-  placeName: { flex: 1, minWidth: 0, fontSize: 18, fontWeight: '600', color: '#1D4030' },
+  placeName: { flex: 1, minWidth: 0, fontSize: 18, fontWeight: '600', color: uiColors.text },
   actionButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  actionText: { fontSize: 24, fontWeight: '700', color: '#2C6049' },
+  actionText: { fontSize: 24, fontWeight: '700', color: uiColors.primary },
   dateText: {
     fontSize: 12,
-    color: '#5C7A6B',
+    color: uiColors.primary,
   },
   messageText: {
     fontSize: 16,
-    color: '#1D4030',
+    color: uiColors.text,
     lineHeight: 24,
   },
   postImage: {
@@ -484,20 +485,20 @@ const styles = StyleSheet.create({
     maxHeight: maxPhotoHeight,
     marginVertical: 2,
     borderRadius: 10,
-    backgroundColor: '#F7F9F7',
+    backgroundColor: uiColors.background,
   },
   backButton: {
     height: 48,
-    backgroundColor: '#2C6049',
+    backgroundColor: uiColors.primaryFill,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   backButtonText: {
-    color: '#FFFFFF',
+    color: uiColors.onPrimary,
     fontSize: 15,
     fontWeight: '700',
   },
   detailBackButton: { flex: 1, minHeight: 44, justifyContent: 'center' },
-  detailBackText: { color: '#1D4030', fontSize: 16, fontWeight: '700' },
+  detailBackText: { color: uiColors.text, fontSize: 16, fontWeight: '700' },
 });

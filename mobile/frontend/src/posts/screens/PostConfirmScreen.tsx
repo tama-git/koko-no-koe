@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { createPost } from '../postService'; // バックエンドにデータを送信するAPI関数
+import { uiColors } from '../../shared/uiColors';
 
 /** 
  * 入力画面から渡されたデータ（メッセージ・写真・位置情報・公開設定）を確認し、最終送信を行う画面 
@@ -109,17 +110,17 @@ export function PostConfirmScreen({ route, navigation, token, onCreated }: { rou
  * 画面のスタイル定義
  */
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F7F9F7' },
+  container: { flexGrow: 1, padding: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: uiColors.background },
   content: { width: '100%', maxWidth: 440 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#1C3D2D' },
-  card: { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: '#E2EBE0' },
-  label: { fontSize: 13, fontWeight: '600', color: '#5C7A6B', marginTop: 12, marginBottom: 4 },
-  value: { fontSize: 15, color: '#1D4030', lineHeight: 22 },
-  locationNotice: { fontSize: 13, color: '#5C7A6B', lineHeight: 20, marginBottom: 12 },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: uiColors.text },
+  card: { backgroundColor: uiColors.surface, borderRadius: 12, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: uiColors.border },
+  label: { fontSize: 13, fontWeight: '600', color: uiColors.primary, marginTop: 12, marginBottom: 4 },
+  value: { fontSize: 15, color: uiColors.text, lineHeight: 22 },
+  locationNotice: { fontSize: 13, color: uiColors.primary, lineHeight: 20, marginBottom: 12 },
   previewImage: { width: '100%', height: 200, borderRadius: 8, marginTop: 4, resizeMode: 'contain' },
-  button: { height: 52, backgroundColor: '#2C6049', borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  button: { height: 52, backgroundColor: uiColors.primaryFill, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  buttonText: { color: uiColors.onPrimary, fontSize: 15, fontWeight: '700' },
   backButton: { height: 44, alignItems: 'center', justifyContent: 'center' },
-  backButtonText: { color: '#2C6049', fontSize: 14, fontWeight: '600' },
+  backButtonText: { color: uiColors.primary, fontSize: 14, fontWeight: '600' },
 });

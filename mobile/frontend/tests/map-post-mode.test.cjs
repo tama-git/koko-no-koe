@@ -6,7 +6,8 @@ const vm = require('node:vm');
 // アプリの拡張子なしimportを、Nodeのテストでは直接.tsに解決する。
 const hooks = registerHooks({
   resolve(specifier, context, next) {
-    return next(specifier === './filterNearbyPosts' ? specifier + '.ts' : specifier, context);
+    const localModule = specifier === './filterNearbyPosts' || specifier === '../shared/uiColors';
+    return next(localModule ? specifier + '.ts' : specifier, context);
   },
 });
 const { ownPostsToPins, resolvePostPinTap } = require('../src/map/postPins.ts');
@@ -14,9 +15,9 @@ const { createOpenFreeMapDocument } = require('../src/map/openFreeMapDocument.ts
 hooks.deregister();
 
 const point = { latitude: 36.6, longitude: 138.2 };
-const ownPin = { id: 1, ...point, isOwn: true, nearby: false };
-const otherPin = { id: 2, ...point, isOwn: false, nearby: true };
-const privatePin = { id: 3, ...point, isOwn: true, nearby: false };
+const ownPin = { id: 1, ...point, isOwn: true, nearby: false, withinRadius: false };
+const otherPin = { id: 2, ...point, isOwn: false, nearby: true, withinRadius: true };
+const privatePin = { id: 3, ...point, isOwn: true, nearby: false, withinRadius: true };
 
 test('the owner feed supplies private and moderated pins and skips unusable coordinates', () => {
   const posts = [
@@ -42,9 +43,9 @@ test('owner pins open without GPS and stale events cannot open a post', () => {
   assert.ok(far.distanceMeters > 250);
 });
 
-test('the existing WebView rebuilds clusters by mode and cancels only the old pin focus', () => {
+function mountMap(pins) {
   const snapshot = (modeRevision, pins) => ({ current: null, displayPosition: null, modeRevision, pins });
-  const html = createOpenFreeMapDocument(snapshot(0, [ownPin, otherPin]));
+  const html = createOpenFreeMapDocument(snapshot(0, pins));
   const initialJson = html.match(/id="initial-map-snapshot">([^<]*)<\/script>/)[1];
   const script = html.match(/<script>\s*([\s\S]+?)<\/script>/)[1];
   const loadedIds = [];
@@ -60,10 +61,21 @@ test('the existing WebView rebuilds clusters by mode and cancels only the old pi
   };
   const makeNode = () => {
     const events = new Map();
+    const attributes = new Map();
+    const classes = new Set();
+    const children = [];
     return {
-      events, style: {}, textContent: '',
-      classList: { add() {}, toggle() {}, contains: () => false, remove() {} },
-      setAttribute() {}, addEventListener: (type, fn) => events.set(type, fn),
+      events, attributes, children, style: { setProperty() {} }, textContent: '', innerHTML: '',
+      set className(value) { classes.clear(); classes.add(value); },
+      classList: {
+        add: name => classes.add(name),
+        toggle: (name, on) => on ? classes.add(name) : classes.delete(name),
+        contains: name => classes.has(name),
+        remove: name => classes.delete(name),
+      },
+      appendChild: node => children.push(node),
+      setAttribute: (name, value) => attributes.set(name, value),
+      addEventListener: (type, fn) => events.set(type, fn),
     };
   };
   const world = vm.createContext({
@@ -83,7 +95,12 @@ test('the existing WebView rebuilds clusters by mode and cancels only the old pi
     fetch: () => new Promise(() => {}),
     setTimeout() {},
     maplibregl: { Marker: class {
-      constructor({ element } = {}) { this.element = element ?? makeNode(); }
+      constructor(options = {}) {
+        this.element = options.element ?? makeNode();
+        this.element.marker = this;
+        this.anchor = options.anchor;
+        this.color = options.color;
+      }
       setLngLat(coordinates) { this.coordinates = coordinates; return this; }
       getLngLat() { return this.coordinates; }
       addTo() { visible.add(this.element); return this; }
@@ -103,6 +120,15 @@ test('the existing WebView rebuilds clusters by mode and cancels only the old pi
   vm.runInContext('map = mapForTest; ready = true; applySnapshot(initial);', world);
   const command = data => world.window.receiveKokoMapCommand(data);
   const refresh = (requestId, modeRevision, pins) => command({ type: 'snapshot', requestId, snapshot: snapshot(modeRevision, pins) });
+  const zoomToPins = () => {
+    map.zoom = 17;
+    vm.runInContext('updateClusterMarkers();', world);
+  };
+  return { loadedIds, messages, camera, visible, command, refresh, zoomToPins };
+}
+
+test('the existing WebView rebuilds clusters by mode and cancels only the old pin focus', () => {
+  const { loadedIds, messages, camera, visible, command, refresh, zoomToPins } = mountMap([ownPin, otherPin]);
   const oldClusterTap = [...visible][0].events.get('click');
   assert.deepEqual(loadedIds, [[1, 2]]);
 
@@ -112,8 +138,7 @@ test('the existing WebView rebuilds clusters by mode and cancels only the old pi
   oldClusterTap();
   assert.deepEqual(camera, []);
 
-  map.zoom = 17;
-  vm.runInContext('updateClusterMarkers();', world);
+  zoomToPins();
   const oldOwnTap = [...visible].at(-1).events.get('click');
   oldOwnTap();
   assert.deepEqual(messages.at(-1), { type: 'pin', id: 3, modeRevision: 1 });
@@ -140,4 +165,39 @@ test('the existing WebView rebuilds clusters by mode and cancels only the old pi
   refresh(1, 2, []);
   assert.deepEqual(loadedIds, [[1, 2], [1, 3], [1, 2]]);
   assert.equal(messages.at(-1).modeRevision, 2);
+});
+
+test('nearby posts use bottom-anchored bubbles while out-of-range pins retain their markers', () => {
+  const farOtherPin = { ...otherPin, id: 4, nearby: false, withinRadius: false };
+  const { camera, messages, visible, command, zoomToPins } = mountMap([otherPin, privatePin, ownPin, farOtherPin]);
+  const [cluster] = visible;
+  assert.equal(cluster.children[0].textContent, '4');
+  assert.equal(cluster.attributes.get('aria-label'), '4件の投稿を拡大表示');
+  cluster.events.get('click')();
+  assert.deepEqual(camera, ['cluster']);
+
+  zoomToPins();
+  const [other, owner, farOwner, farOther] = visible;
+  assert.match(other.innerHTML, /M9\.5 13h13m-13 5\.5h9/);
+  assert.match(owner.innerHTML, /<circle/);
+  for (const element of [other, owner]) {
+    assert.ok(element.classList.contains('post-pin-bubble'));
+    assert.equal(element.marker.anchor, 'bottom');
+    assert.deepEqual(Array.from(element.marker.getLngLat()), [point.longitude, point.latitude]);
+  }
+  assert.equal(farOwner.marker.color, '#598879');
+  assert.equal(farOther.marker.color, '#68737E');
+  assert.equal(farOther.attributes.get('aria-label'), '投稿までの距離を表示');
+  assert.ok(!farOther.classList.contains('post-pin-bubble'));
+
+  owner.events.get('click')();
+  assert.deepEqual(messages.at(-1), { type: 'pin', id: 3, modeRevision: 0 });
+  const ownerIcon = owner.innerHTML;
+  command({ type: 'select-post-pin', modeRevision: 0, id: 3 });
+  assert.ok(owner.classList.contains('post-pin-selected'));
+  assert.equal(owner.attributes.get('aria-pressed'), 'true');
+  assert.equal(owner.innerHTML, ownerIcon);
+  command({ type: 'select-post-pin', modeRevision: 0, id: null });
+  assert.ok(!owner.classList.contains('post-pin-selected'));
+  assert.equal(owner.attributes.get('aria-pressed'), 'false');
 });

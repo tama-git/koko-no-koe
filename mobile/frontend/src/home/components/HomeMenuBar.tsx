@@ -3,6 +3,7 @@ import type { LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import type { PostListScope } from '../../posts/usePostList';
 import { POST_MODE_LABELS } from './bottomSheetTabs';
+import { uiColors } from '../../shared/uiColors';
 
 export function HomeMenuBar({ mode, onSelectMode, onCompose, onLayout, composeDisabled }: {
   mode: PostListScope;
@@ -17,7 +18,7 @@ export function HomeMenuBar({ mode, onSelectMode, onCompose, onLayout, composeDi
       <View style={styles.column}>
         <Pressable accessibilityRole="tab" accessibilityState={{ selected }} onPress={() => onSelectMode(id)}
           style={({ pressed }) => [styles.item, selected && styles.selected, pressed && styles.pressed]}>
-          <MenuIcon name={id} color={selected ? '#1D4030' : '#53645A'} />
+          <MenuIcon name={id} color={selected ? uiColors.text : uiColors.primary} />
           <Text style={[styles.label, selected && styles.selectedLabel]}>{POST_MODE_LABELS[id]}</Text>
         </Pressable>
       </View>
@@ -31,7 +32,7 @@ export function HomeMenuBar({ mode, onSelectMode, onCompose, onLayout, composeDi
         <View style={styles.column}>
           <Pressable accessibilityRole="button" disabled={composeDisabled} onPress={onCompose}
             style={({ pressed }) => [styles.item, styles.compose, (pressed || composeDisabled) && styles.pressed]}>
-            <MenuIcon name="compose" color="#FFFFFF" />
+            <MenuIcon name="compose" color={uiColors.onPrimary} />
             <Text style={[styles.label, styles.composeLabel]}>声を残す</Text>
           </Pressable>
         </View>
@@ -56,15 +57,15 @@ function MenuIcon({ name, color }: { name: PostListScope | 'compose'; color: str
 }
 
 const styles = StyleSheet.create({
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFFFFF',
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#DCE6DA' },
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: uiColors.surface,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: uiColors.border },
   row: { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 5, gap: 4 },
   column: { flex: 1 },
   item: { flexGrow: 1, minHeight: 48, borderRadius: 20, alignItems: 'center', justifyContent: 'center', gap: 3, padding: 5 },
-  selected: { backgroundColor: '#E8EFEA' },
-  label: { fontSize: 12, color: '#53645A', fontWeight: '600', textAlign: 'center' },
-  selectedLabel: { color: '#1D4030', fontWeight: '700' },
-  compose: { backgroundColor: '#2C6049' },
-  composeLabel: { color: '#FFFFFF' },
+  selected: { backgroundColor: uiColors.selectionFill },
+  label: { fontSize: 12, color: uiColors.primary, fontWeight: '600', textAlign: 'center' },
+  selectedLabel: { color: uiColors.text, fontWeight: '700' },
+  compose: { backgroundColor: uiColors.primaryFill },
+  composeLabel: { color: uiColors.onPrimary },
   pressed: { opacity: 0.6 },
 });

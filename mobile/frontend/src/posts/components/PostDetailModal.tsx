@@ -1,5 +1,6 @@
 import { Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PostDetailScreen } from '../screens/PostDetailScreen';
+import { uiColors } from '../../shared/uiColors';
 
 type Props = { onClose: () => void } & (
   | {
@@ -50,12 +51,12 @@ export function PostDistanceNotice({ distanceMeters }: { distanceMeters: number 
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F7F9F7' },
+  screen: { flex: 1, backgroundColor: uiColors.background },
   content: { width: '100%', maxWidth: 440, alignSelf: 'center', padding: 20, gap: 20 },
-  title: { fontSize: 22, fontWeight: '700', textAlign: 'center', color: '#1C3D2D' },
-  card: { padding: 20, gap: 8, borderRadius: 12, borderWidth: 1, borderColor: '#E2EBE0', backgroundColor: '#FFFFFF' },
-  label: { fontSize: 14, fontWeight: '600', color: '#2C6049' },
-  distance: { fontSize: 18, color: '#1D4030' },
-  back: { minHeight: 48, justifyContent: 'center', alignItems: 'center', borderRadius: 10, backgroundColor: '#2C6049' },
-  backText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  title: { fontSize: 22, fontWeight: '700', textAlign: 'center', color: uiColors.text },
+  card: { padding: 20, gap: 8, borderRadius: 12, borderWidth: 1, borderColor: uiColors.border, backgroundColor: uiColors.surface },
+  label: { fontSize: 14, fontWeight: '600', color: uiColors.primary },
+  distance: { fontSize: 18, color: uiColors.text },
+  back: { minHeight: 48, justifyContent: 'center', alignItems: 'center', borderRadius: 10, backgroundColor: uiColors.primaryFill },
+  backText: { color: uiColors.onPrimary, fontSize: 15, fontWeight: '700' },
 });
