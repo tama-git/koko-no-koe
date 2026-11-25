@@ -23,11 +23,12 @@ import type { PostDetailSheetControls } from '../../posts/screens/PostDetailScre
 import type { ViewerCoordinates } from '../../posts/postService';
 import type { PostSortOrder } from '../../posts/sortPosts';
 import type { PostListScope, PostListState } from '../../posts/usePostList';
+import { uiColors } from '../../shared/uiColors';
 
 const TAP_SLOP = 6;
 const SHEET_DIVIDER_HEIGHT = 1;
 const FULL_BACKGROUND_FADE_DISTANCE = 12;
-const SHEET_BACKGROUND_COLOR = '#F4F2ED';
+const SHEET_BACKGROUND_COLOR = uiColors.background;
 
 type SheetDetail = { id: number } & (
   | { renderPost: (controls: PostDetailSheetControls) => ReactNode }
@@ -346,17 +347,17 @@ const styles = StyleSheet.create({
   handle: {
     width: 40,
     height: 4,
-    backgroundColor: '#BBBBBB',
+    backgroundColor: uiColors.neutral,
     borderRadius: 10,
   },
   page: { flex: 1 },
   hiddenPage: { display: 'none' },
-  countText: { color: '#1D4030', fontSize: 16, fontWeight: '700' },
+  countText: { color: uiColors.text, fontSize: 16, fontWeight: '700' },
   detailBack: { minHeight: MIN_SHEET_HEADER_HEIGHT, paddingHorizontal: 20, justifyContent: 'center' },
-  detailBackText: { color: '#1D4030', fontSize: 16, fontWeight: '700' },
+  detailBackText: { color: uiColors.text, fontSize: 16, fontWeight: '700' },
   listHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, gap: 8 },
   header: { flex: 1, minWidth: 0, minHeight: MIN_SHEET_HEADER_HEIGHT, paddingVertical: 6, justifyContent: 'center' },
   headingRow: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 6, rowGap: 2 },
-  divider: { height: SHEET_DIVIDER_HEIGHT, backgroundColor: '#DDDAD2' },
-  title: { fontSize: 18, fontWeight: '700', color: '#1D4030', flexShrink: 1 },
+  divider: { height: SHEET_DIVIDER_HEIGHT, backgroundColor: uiColors.border },
+  title: { fontSize: 18, fontWeight: '700', color: uiColors.text, flexShrink: 1 },
 });

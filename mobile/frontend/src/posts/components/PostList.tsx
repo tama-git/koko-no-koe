@@ -8,6 +8,7 @@ import type { PostSortOrder } from '../sortPosts';
 import type { PostListScope, PostListState } from '../usePostList';
 import { PostListCard } from './PostListCard';
 import { PostPlaceCredits } from './PostPlaceCredits';
+import { uiColors } from '../../shared/uiColors';
 
 function getCurrentOrder(order: PostSortOrder, canSortByDistance: boolean): PostSortOrder {
   return !canSortByDistance && order === 'nearest' ? 'newest' : order;
@@ -92,7 +93,7 @@ export function PostList({ list, onSelectPost, scope, token, coordinates, order,
         onScroll={event => setScrollY(Math.max(0, event.nativeEvent.contentOffset.y))}
         scrollEventThrottle={64}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
-        {loading && !refreshing && <ActivityIndicator color="#2C6049" />}
+        {loading && !refreshing && <ActivityIndicator color={uiColors.primary} />}
         {error ? <View>
           <Text accessibilityLiveRegion="polite">{error}</Text>
           <Pressable accessibilityRole="button" style={styles.refresh} onPress={refresh}><Text style={styles.link}>再取得</Text></Pressable>
@@ -114,11 +115,11 @@ export function PostList({ list, onSelectPost, scope, token, coordinates, order,
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
   list: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 20 },
-  creditsFooter: { gap: 2, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#DDDAD2' },
-  creditsLabel: { fontSize: 12, fontWeight: '600', color: '#53645A' },
+  creditsFooter: { gap: 2, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderColor: uiColors.border },
+  creditsLabel: { fontSize: 12, fontWeight: '600', color: uiColors.primary },
   refresh: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', marginBottom: 8 },
   standaloneSort: { alignItems: 'flex-end', paddingRight: 12 },
   sortButton: { minHeight: 44, minWidth: 44, maxWidth: '46%', justifyContent: 'center', paddingHorizontal: 4 },
   sortLabel: { fontSize: 14, textAlign: 'right' },
-  link: { color: '#2C6049', fontWeight: '600' },
+  link: { color: uiColors.primary, fontWeight: '600' },
 });

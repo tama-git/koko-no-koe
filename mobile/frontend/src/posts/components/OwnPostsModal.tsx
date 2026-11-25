@@ -4,6 +4,7 @@ import { PostList } from './PostList';
 import { PostDetailScreen } from '../screens/PostDetailScreen';
 import type { PostSortOrder } from '../sortPosts';
 import { usePostList } from '../usePostList';
+import { uiColors } from '../../shared/uiColors';
 
 export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted, onVisibilityChanged }: {
   token: string;
@@ -36,8 +37,8 @@ export function OwnPostsModal({ token, refreshKey, onClose, onPostDeleted, onVis
   </Modal>;
 }
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#FFFFFF' },
+  screen: { flex: 1, backgroundColor: uiColors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20 },
-  title: { fontSize: 20, fontWeight: '700', color: '#1D4030' },
+  title: { fontSize: 20, fontWeight: '700', color: uiColors.text },
   close: { padding: 14 },
 });

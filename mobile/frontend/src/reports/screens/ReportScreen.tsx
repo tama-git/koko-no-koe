@@ -3,6 +3,7 @@ import { Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView,
 import { AppScreen } from '../../shared/components/AppScreen';
 import { REPORT_CATEGORIES, REPORT_DETAILS_LIMIT, submitReport, validateReport } from '../reportService';
 import type { ReportCategory } from '../reportService';
+import { uiColors } from '../../shared/uiColors';
 
 export function ReportScreen({ postId, message, token, onClose }: {
   postId: number;
@@ -95,18 +96,18 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#DCE6DA',
+    paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: uiColors.border,
   },
   headerButton: { minHeight: 48, minWidth: 72, paddingHorizontal: 6, justifyContent: 'center' },
-  buttonText: { textAlign: 'center', color: '#2C6049', fontSize: 15, fontWeight: '700' },
-  title: { fontSize: 18, color: '#1D4030', fontWeight: '700' },
+  buttonText: { textAlign: 'center', color: uiColors.primary, fontSize: 15, fontWeight: '700' },
+  title: { fontSize: 18, color: uiColors.text, fontWeight: '700' },
   content: { padding: 20 },
-  label: { fontSize: 16, fontWeight: '700', color: '#1D4030', marginBottom: 8 },
-  preview: { backgroundColor: '#F3F7F4', color: '#1D4030', padding: 12, borderRadius: 8, marginBottom: 20 },
-  choice: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginBottom: 6, borderRadius: 8, borderWidth: 1, borderColor: '#DCE6DA' },
-  checkedChoice: { backgroundColor: '#EAF3EC', borderColor: '#2C6049' },
-  choiceText: { fontSize: 15, color: '#1D4030' },
-  input: { minHeight: 100, padding: 12, fontSize: 16, borderRadius: 8, borderWidth: 1, borderColor: '#AABAAE', textAlignVertical: 'top' },
-  counter: { textAlign: 'right', marginTop: 6, color: '#55685E' },
+  label: { fontSize: 16, fontWeight: '700', color: uiColors.text, marginBottom: 8 },
+  preview: { backgroundColor: uiColors.tint, color: uiColors.text, padding: 12, borderRadius: 8, marginBottom: 20 },
+  choice: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginBottom: 6, borderRadius: 8, borderWidth: 1, borderColor: uiColors.border },
+  checkedChoice: { backgroundColor: uiColors.tint, borderColor: uiColors.primary },
+  choiceText: { fontSize: 15, color: uiColors.text },
+  input: { minHeight: 100, padding: 12, fontSize: 16, borderRadius: 8, borderWidth: 1, borderColor: uiColors.primary, textAlignVertical: 'top' },
+  counter: { textAlign: 'right', marginTop: 6, color: uiColors.primary },
   error: { color: '#A82B25', marginTop: 12 },
 });

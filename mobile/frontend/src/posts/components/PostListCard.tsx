@@ -8,6 +8,7 @@ import { formatPostDate } from '../formatPostDate';
 import type { SavedPost, ViewerCoordinates } from '../postService';
 import type { PostListScope } from '../usePostList';
 import { PostPlaceCreditLine } from './PostPlaceCredits';
+import { uiColors } from '../../shared/uiColors';
 
 const THUMBNAIL_LOOKAHEAD = 120;
 const THUMBNAIL_SCROLL_DELAY_MS = 120;
@@ -86,9 +87,9 @@ export function PostListCard({ post, onSelectPost, scope, token, coordinates, vi
 }
 
 const styles = StyleSheet.create({
-  post: { backgroundColor: '#FFFFFF', borderRadius: 12, marginBottom: 10,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: '#DDDAD2' },
-  ownPost: { backgroundColor: '#E8F5E9', borderLeftWidth: 3, borderLeftColor: '#1B8553' },
+  post: { backgroundColor: uiColors.surface, borderRadius: 12, marginBottom: 10,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: uiColors.border },
+  ownPost: { backgroundColor: uiColors.tint, borderLeftWidth: 3, borderLeftColor: uiColors.accent },
   content: { padding: 12 },
   contentWithCredits: { paddingBottom: 4 },
   photoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
@@ -96,8 +97,8 @@ const styles = StyleSheet.create({
   copy: { gap: 4 },
   placeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4 },
   placePin: { marginTop: 2 },
-  placeName: { flexShrink: 1, minWidth: 0, fontSize: 10, fontWeight: '400', color: '#53645A' },
-  postText: { fontSize: 14, lineHeight: 20, color: '#333333' },
+  placeName: { flexShrink: 1, minWidth: 0, fontSize: 10, fontWeight: '400', color: uiColors.primary },
+  postText: { fontSize: 14, lineHeight: 20, color: uiColors.text },
   rowText: { flex: 1, minWidth: 0, alignSelf: 'center' },
-  metadata: { fontSize: 12, color: '#53645A' },
+  metadata: { fontSize: 12, color: uiColors.primary },
 });

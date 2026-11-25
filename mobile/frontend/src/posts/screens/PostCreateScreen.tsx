@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker'; // その場でカメラを起
 import { requestCurrentLocation } from '../../location/locationRequest';
 import type { LocationResult } from '../../location/locationRequest';
 import { PostVisibilityOptions } from '../components/PostVisibilityOptions';
+import { uiColors } from '../../shared/uiColors';
 
 // AとBは別々に測位し、写真を替えたときは前の写真の測位結果を破棄する。
 function usePostLocation(source: true | ImagePicker.ImagePickerAsset | null) {
@@ -121,7 +122,7 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
           <TextInput
             style={styles.input}
             placeholder="いまどうしてる？"
-            placeholderTextColor="#7D8C80"
+            placeholderTextColor={uiColors.primary}
             value={message}
             onChangeText={setMessage}
             multiline // 複数行入力を許可
@@ -184,21 +185,21 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
  * 画面のスタイル定義
  */
 const styles = StyleSheet.create({
-  keyboard: { flex: 1, backgroundColor: '#fff' },
+  keyboard: { flex: 1, backgroundColor: uiColors.background },
   container: { flexGrow: 1, padding: 24, justifyContent: 'center', alignItems: 'center' },
   content: { width: '100%', maxWidth: 440 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 24, textAlign: 'center', color: '#1C3D2D' },
-  label: { fontSize: 14, marginBottom: 8, fontWeight: '600', color: '#395647' },
-  input: { borderWidth: 1, borderColor: '#DCE6DA', borderRadius: 10, padding: 14, height: 100, marginBottom: 16, textAlignVertical: 'top', fontSize: 15, backgroundColor: '#FBFCFA', color: '#1D4030' },
-  imagePickerButton: { height: 46, borderWidth: 1, borderColor: '#2C6049', borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 16, backgroundColor: '#F3F7F4' },
-  imagePickerButtonText: { color: '#2C6049', fontSize: 14, fontWeight: '600' },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 24, textAlign: 'center', color: uiColors.text },
+  label: { fontSize: 14, marginBottom: 8, fontWeight: '600', color: uiColors.primary },
+  input: { borderWidth: 1, borderColor: uiColors.border, borderRadius: 10, padding: 14, height: 100, marginBottom: 16, textAlignVertical: 'top', fontSize: 15, backgroundColor: uiColors.surface, color: uiColors.text },
+  imagePickerButton: { height: 46, borderWidth: 1, borderColor: uiColors.primary, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 16, backgroundColor: uiColors.tint },
+  imagePickerButtonText: { color: uiColors.primary, fontSize: 14, fontWeight: '600' },
   previewContainer: { alignItems: 'center', marginBottom: 20 },
   previewImage: { width: '100%', height: 180, borderRadius: 10, marginBottom: 8, resizeMode: 'contain' },
   removeImageButton: { paddingVertical: 4 },
   removeImageButtonText: { color: '#D9534F', fontSize: 13, fontWeight: '600' },
-  button: { height: 52, backgroundColor: '#2C6049', borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  locationNotice: { marginBottom: 12, color: '#395647' },
+  button: { height: 52, backgroundColor: uiColors.primaryFill, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  locationNotice: { marginBottom: 12, color: uiColors.primary },
   locationRetry: { minHeight: 44, justifyContent: 'center' },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  buttonText: { color: uiColors.onPrimary, fontSize: 15, fontWeight: '700' },
 });

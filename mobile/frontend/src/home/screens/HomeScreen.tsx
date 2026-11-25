@@ -15,7 +15,9 @@ import { PostDistanceNotice } from '../../posts/components/PostDetailModal';
 import { PostDetailScreen } from '../../posts/screens/PostDetailScreen';
 import { usePostList } from '../../posts/usePostList';
 import type { PostListScope } from '../../posts/usePostList';
+import { TutorialScreen } from '../../tutorial/TutorialScreen';
 import { UtilityScreen } from '../../utility/screens/UtilityScreen';
+import { uiColors } from '../../shared/uiColors';
 
 type Props = {
   token: string;
@@ -31,6 +33,7 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
   const activePostMode = useRef(postMode);
   const { scope: mode, revision: modeRevision } = postMode;
   const [openScreen, setOpenScreen] = useState<'compose' | 'settings' | null>(null);
+  const [replayingTutorial, setReplayingTutorial] = useState(false);
   const [menuHeight, setMenuHeight] = useState(0);
   const sheetHeight = useRef(new Animated.Value(0)).current;
   const mapControlsInset = useMemo(() => Animated.add(sheetHeight, menuHeight), [sheetHeight, menuHeight]);
@@ -125,17 +128,23 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
           <PostComposerModal token={token} onCreated={refreshPosts} onClose={() => setOpenScreen(null)} />
         )}
         {openScreen === 'settings' && (
-          <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setOpenScreen(null)}>
-            <AppScreen>
-              <View style={styles.settingsHeader}>
-                <Text accessibilityRole="header" style={styles.settingsTitle}>設定</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel="設定を閉じる"
-                  style={styles.closeSettings} onPress={() => setOpenScreen(null)}>
-                  <Text style={styles.closeSettingsText}>閉じる</Text>
-                </Pressable>
-              </View>
-              <UtilityScreen token={token} onLogout={onLogout} user={user} />
-            </AppScreen>
+          <Modal visible animationType="slide" presentationStyle="fullScreen"
+            onRequestClose={replayingTutorial ? () => setReplayingTutorial(false) : () => setOpenScreen(null)}>
+            {replayingTutorial ? (
+              <TutorialScreen onExit={() => setReplayingTutorial(false)} />
+            ) : (
+              <AppScreen>
+                <View style={styles.settingsHeader}>
+                  <Text accessibilityRole="header" style={styles.settingsTitle}>設定</Text>
+                  <Pressable accessibilityRole="button" accessibilityLabel="設定を閉じる"
+                    style={styles.closeSettings} onPress={() => setOpenScreen(null)}>
+                    <Text style={styles.closeSettingsText}>閉じる</Text>
+                  </Pressable>
+                </View>
+                <UtilityScreen token={token} onLogout={onLogout} user={user}
+                  onOpenTutorial={() => setReplayingTutorial(true)} />
+              </AppScreen>
+            )}
           </Modal>
         )}
       </View>
@@ -147,8 +156,8 @@ const styles = StyleSheet.create({
   home: { flex: 1 },
   settingsHeader: { paddingHorizontal: 20, paddingVertical: 8, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#DCE6DA', marginBottom: 12 },
-  settingsTitle: { fontSize: 20, fontWeight: '700', color: '#1D4030', flexShrink: 1 },
+    borderBottomColor: uiColors.border, marginBottom: 12 },
+  settingsTitle: { fontSize: 20, fontWeight: '700', color: uiColors.text, flexShrink: 1 },
   closeSettings: { minHeight: 44, paddingLeft: 12, justifyContent: 'center' },
-  closeSettingsText: { fontWeight: '600', color: '#2C6049' },
+  closeSettingsText: { fontWeight: '600', color: uiColors.primary },
 });

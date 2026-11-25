@@ -1,5 +1,6 @@
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import type { PostPlaceAttribution } from '../postService';
+import { uiColors } from '../../shared/uiColors';
 
 const geoapifyCredit = { label: 'Powered by Geoapify', url: 'https://www.geoapify.com/' };
 const openStreetMapCredit = { label: '© OpenStreetMap contributors', url: 'https://www.openstreetmap.org/copyright' };
@@ -52,8 +53,8 @@ const styles = StyleSheet.create({
   links: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 8, rowGap: 4, marginTop: 8 },
   compactLinks: { rowGap: 2, marginTop: 2 },
   cardLinks: { marginTop: 0, paddingHorizontal: 12, paddingBottom: 8 },
-  text: { fontSize: 12, color: '#5C7A6B' },
-  compactText: { color: '#53645A', flexShrink: 1 },
+  text: { fontSize: 12, color: uiColors.primary },
+  compactText: { color: uiColors.primary, flexShrink: 1 },
   cardText: { fontSize: 10 },
   link: { textDecorationLine: 'underline' },
 });

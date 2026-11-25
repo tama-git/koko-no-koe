@@ -7,11 +7,12 @@ import type { WebViewMessageEvent, WebViewProps } from 'react-native-webview';
 import type { DisplayPosition } from '../../location/displayPosition';
 import type { LocationState } from '../../location/useCurrentLocation';
 import type { PostPin } from '../../posts/postService';
-import { distanceMeters } from '../filterNearbyPosts';
+import { distanceMeters, RADIUS_METERS } from '../filterNearbyPosts';
 import { createOpenFreeMapDocument } from '../openFreeMapDocument';
 import type { MapPoint, MapSnapshot } from '../openFreeMapDocument';
 import { resolvePostPinTap } from '../postPins';
 import type { MapPinSelection } from '../postPins';
+import { uiColors } from '../../shared/uiColors';
 
 const overlayMessages = {
   position: '地図に現在地の点を表示できませんでした。',
@@ -88,7 +89,12 @@ export function HomeMap({
     current: latitude !== null && longitude !== null ? { latitude, longitude } : null,
     displayPosition: latitude !== null && longitude !== null ? displayPosition : null,
     modeRevision,
-    pins,
+    pins: pins.map(pin => ({
+      ...pin,
+      // 非公開の自分の投稿も、閲覧可否とは独立して地図上の見た目を決める。
+      withinRadius: pin.nearby || (pin.isOwn === true && latitude !== null && longitude !== null &&
+        distanceMeters(latitude, longitude, pin.latitude, pin.longitude) <= RADIUS_METERS + 1e-7),
+    })),
   }), [latitude, longitude, displayPosition, modeRevision, pins]);
   const snapshotJson = JSON.stringify(snapshot);
   const positionNeedsUpdate = mapState === 'ready' && coordinates !== null &&
@@ -303,7 +309,7 @@ export function HomeMap({
           <Pressable accessibilityRole="button" accessibilityLabel="設定を開く" style={styles.mapButton}
             onPress={onOpenSettings}>
             <View style={styles.iconContainer}>
-              <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#1D4030"
+              <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={uiColors.text}
                 strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Path d="m9.5 4 .7-2h3.6l.7 2 1.6.9 2.1-.4 1.8 3.1-1.4 1.6v1.8L20 12.6l-1.8 3.1-2.1-.4-1.6.9-.7 2h-3.6l-.7-2-1.6-.9-2.1.4L4 12.6 5.4 11V9.2L4 7.6l1.8-3.1 2.1.4 1.6-.9Z" transform="translate(0 1.9)" />
                 <Circle cx={12} cy={12} r={2.5} />
@@ -316,8 +322,8 @@ export function HomeMap({
               <Animated.View style={[styles.iconContainer, { transform: [{ rotate: compassRotationStyle }] }]}>
                 <Svg width={26} height={26} viewBox="0 0 24 24">
                   <Polygon points="12,3 15.5,12 8.5,12" fill="#E53935" />
-                  <Polygon points="12,21 15.5,12 8.5,12" fill="#BDBDBD" />
-                  <Circle cx="12" cy="12" r="2" fill="#FFFFFF" />
+                  <Polygon points="12,21 15.5,12 8.5,12" fill={uiColors.neutral} />
+                  <Circle cx="12" cy="12" r="2" fill={uiColors.surface} />
                 </Svg>
               </Animated.View>
             </Pressable>
@@ -331,7 +337,7 @@ export function HomeMap({
                 <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
                   <Path
                     d="M21 3L3 10.53V11.51L9.84 14.16L12.48 21H13.46L21 3Z"
-                    stroke="#1F1F1F"
+                    stroke={uiColors.text}
                     strokeWidth={2}
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -365,7 +371,7 @@ const styles = StyleSheet.create({
   controls: { position: 'absolute', left: 8, right: 12, paddingBottom: 8,
     flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 },
   credits: { flexShrink: 1, backgroundColor: '#FFFFFFCC', borderRadius: 4,
-    paddingVertical: 3, paddingHorizontal: 5, color: '#334039', fontSize: 10 },
+    paddingVertical: 3, paddingHorizontal: 5, color: uiColors.text, fontSize: 10 },
   creditLink: { textDecorationLine: 'underline' },
   iconContainer: {
     width: 26,
@@ -384,17 +390,17 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: uiColors.surface,
     elevation: 4,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.18,
     shadowRadius: 4,
   },
-  map: { flex: 1, backgroundColor: '#EDF0EC' },
+  map: { flex: 1, backgroundColor: uiColors.background },
   noticeArea: { position: 'absolute', top: 0, left: 0, right: 0 },
   notice: { margin: 12, marginTop: 100, padding: 12, borderRadius: 10, backgroundColor: '#FFFFFFEE' },
-  noticeText: { fontSize: 13, lineHeight: 20, color: '#1D4030' },
+  noticeText: { fontSize: 13, lineHeight: 20, color: uiColors.text },
   retry: { minHeight: 44, justifyContent: 'center' },
-  retryText: { fontWeight: '700', color: '#2C6049' },
+  retryText: { fontWeight: '700', color: uiColors.primary },
 });

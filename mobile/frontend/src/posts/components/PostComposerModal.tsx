@@ -4,6 +4,7 @@ import { AppScreen } from '../../shared/components/AppScreen';
 import { PostCreateScreen } from '../screens/PostCreateScreen';
 import { PostConfirmScreen } from '../screens/PostConfirmScreen';
 import { PostDetailScreen } from '../screens/PostDetailScreen';
+import { uiColors } from '../../shared/uiColors';
 
 type Draft = {
   message: string;
@@ -53,10 +54,10 @@ export function PostComposerModal({ onClose, token, onCreated }: { onClose: () =
 }
 
 const styles = StyleSheet.create({
-  header: { minHeight: 52, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#DCE6DA' },
-  heading: { fontSize: 17, fontWeight: '600', color: '#1D4030' },
+  header: { minHeight: 52, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: uiColors.border },
+  heading: { fontSize: 17, fontWeight: '600', color: uiColors.text },
   close: { padding: 12 },
-  closeText: { fontSize: 15, color: '#2C6049' },
+  closeText: { fontSize: 15, color: uiColors.primary },
   body: { flex: 1 },
   hidden: { display: 'none' },
 });

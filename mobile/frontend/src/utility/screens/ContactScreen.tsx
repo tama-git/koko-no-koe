@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppScreen } from '../../shared/components/AppScreen';
+import { uiColors } from '../../shared/uiColors';
 
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '') ?? '';
 
@@ -100,7 +101,7 @@ export function ContactScreen({ token, onClose }: Props) {
                   if (error) setError(null);
                 }}
                 placeholder="ご意見・不具合のご報告などをご記入ください"
-                placeholderTextColor="#9AA79D"
+                placeholderTextColor={uiColors.primary}
                 style={[styles.input, styles.textArea, error && styles.inputError]}
                 value={messageText}
                 editable={!busy}
@@ -127,19 +128,19 @@ export function ContactScreen({ token, onClose }: Props) {
 const styles = StyleSheet.create({
   header: { paddingHorizontal: 12, alignItems: 'flex-start' },
   backButton: { minHeight: 44, paddingHorizontal: 12, justifyContent: 'center' },
-  backText: { color: '#2C6049', fontSize: 15, fontWeight: '700' },
+  backText: { color: uiColors.primary, fontSize: 15, fontWeight: '700' },
   keyboard: { flex: 1 },
   container: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 32, paddingBottom: 32, alignItems: 'center' },
   content: { width: '100%', maxWidth: 440 },
-  title: { color: '#1C3D2D', fontSize: 25, fontWeight: '700', marginBottom: 12 },
-  card: { backgroundColor: '#FFFFFF' },
-  hintText: { color: '#7D8C80', fontSize: 13, lineHeight: 20, marginBottom: 12 },
-  label: { color: '#395647', fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 7 },
-  input: { paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: '#DCE6DA', borderRadius: 10, backgroundColor: '#FBFCFA', color: '#1D4030', fontSize: 15 },
+  title: { color: uiColors.text, fontSize: 25, fontWeight: '700', marginBottom: 12 },
+  card: { backgroundColor: uiColors.background },
+  hintText: { color: uiColors.primary, fontSize: 13, lineHeight: 20, marginBottom: 12 },
+  label: { color: uiColors.primary, fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 7 },
+  input: { paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: uiColors.border, borderRadius: 10, backgroundColor: uiColors.surface, color: uiColors.text, fontSize: 15 },
   textArea: { height: 160, textAlignVertical: 'top' },
   inputError: { borderColor: '#BC6A5C' },
   error: { color: '#AA4B3F', fontSize: 12, lineHeight: 18, marginTop: 7 },
-  button: { height: 52, backgroundColor: '#2C6049', borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 25 },
+  button: { height: 52, backgroundColor: uiColors.primaryFill, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: 25 },
   buttonPressed: { opacity: 0.8 },
-  buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  buttonText: { color: uiColors.onPrimary, fontSize: 15, fontWeight: '700' },
 });
