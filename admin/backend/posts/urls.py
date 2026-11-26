@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (
     PostListCreateAPIView, PublicPostListAPIView, PostDetailAPIView, PostImageAPIView,
     PostReportAPIView, PostHideAPIView, PostThumbnailAPIView, PostVisibilityAPIView,
-    PostPlaceCandidatesAPIView, PostPlaceTagAPIView,
+    PostPlaceCandidatesAPIView, PostPlacePreviewAPIView, PostPlaceTagAPIView,
 )
 from likes.views import PostReactionAPIView
 
@@ -10,6 +10,7 @@ urlpatterns = [
     # モバイルアプリからの通信を受け付けるエンドポイント
     path('', PostListCreateAPIView.as_view(), name='post-list-create'),
     path('public/', PublicPostListAPIView.as_view(), name='post-public-list'),
+    path('place-preview/', PostPlacePreviewAPIView.as_view(), name='post-place-preview'),
     path('<int:pk>/', PostDetailAPIView.as_view(), name='post-detail'),
     path('<int:pk>/visibility/', PostVisibilityAPIView.as_view(), name='post-visibility'),
     path('<int:pk>/place-candidates/', PostPlaceCandidatesAPIView.as_view(), name='post-place-candidates'),

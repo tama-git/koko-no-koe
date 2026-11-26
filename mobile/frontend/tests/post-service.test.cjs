@@ -39,6 +39,57 @@ test('existing list and create endpoints and form fields are preserved', async (
   });
 });
 
+test('draft previews send just the saved-precision coordinates and share the request for the same draft location', async (t) => {
+  const requests = [];
+  const attribution = { label: '© OpenStreetMap contributors', url: 'https://www.openstreetmap.org/copyright' };
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const body = JSON.parse(options.body);
+    requests.push({ url, options, body });
+    const label = body.latitude === '35.1234568' ? '栗田周辺' : '平林周辺';
+    return Response.json({ place_display: { mode: 'auto', label, attribution } });
+  });
+  const { createPostPlacePreviewLoader } = await loadService('http://localhost:9999');
+  const preview = createPostPlacePreviewLoader('test-token');
+  const first = { latitude: 35.123456789, longitude: -139.123456789 };
+  const request = preview(first);
+  assert.strictEqual(preview({ ...first, message: '修正', is_published: false }), request);
+  assert.equal((await request).label, '栗田周辺');
+  assert.strictEqual(preview(first), request);
+  assert.equal((await preview({ ...first, latitude: 36 })).label, '平林周辺');
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].url, 'http://localhost:9999/api/posts/place-preview/');
+  assert.equal(requests[0].options.method, 'POST');
+  assert.equal(requests[0].options.headers.Authorization, 'Bearer test-token');
+  assert.deepEqual(requests[0].body, { latitude: '35.1234568', longitude: '-139.1234568' });
+});
+
+test('unavailable previews fall back and lookups can be attempted after their cache expires', async (t) => {
+  let now = Date.now();
+  let calls = 0;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls += 1;
+    if (calls === 1) return Response.json({ detail: 'unavailable' }, { status: 503 });
+    return Response.json({
+      place_display: { mode: 'auto', label: '栗田周辺', attribution: { label: 'Test source', url: null } },
+    });
+  });
+  const { createPostPlacePreviewLoader } = await loadService('http://localhost:9999');
+  const preview = createPostPlacePreviewLoader('test-token');
+  const coordinates = { latitude: 35, longitude: 139 };
+  assert.equal(await preview(coordinates), null);
+  assert.equal(await preview(coordinates), null);
+  assert.equal(calls, 1);
+  now += 60_000;
+  assert.equal((await preview(coordinates)).label, '栗田周辺');
+  now += 30 * 60_000 - 1;
+  assert.equal((await preview(coordinates)).label, '栗田周辺');
+  assert.equal(calls, 2);
+  now += 1;
+  assert.equal((await preview(coordinates)).label, '栗田周辺');
+  assert.equal(calls, 3);
+});
+
 test('public feed sends viewer coordinates when supplied and returns pins separately', async (t) => {
   const service = await loadService('http://localhost:9999');
   const post = { id: 7, message: 'public', image: null, latitude: 35, longitude: 139, is_published: true, created_at: '2026-11-05T00:00:00Z' };

@@ -9,6 +9,7 @@ from unittest.mock import patch
 from uuid import UUID
 
 from PIL import Image
+from django.core.cache import cache
 from django.db import IntegrityError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -35,6 +36,8 @@ class PostApiTests(TestCase):
                                          expires_at=timezone.now() + timedelta(hours=1))
 
     def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
         self.media = tempfile.TemporaryDirectory()
         self.override = override_settings(MEDIA_ROOT=self.media.name)
         self.override.enable()
@@ -50,6 +53,11 @@ class PostApiTests(TestCase):
 
     def create(self, **changes):
         return self.client.post('/api/posts/', self.payload(**changes), format='multipart')
+
+    def preview(self, **changes):
+        data = {'latitude': '35.1234567', 'longitude': '139.1234567'}
+        data.update(changes)
+        return self.client.post('/api/posts/place-preview/', data, format='json')
 
     def image(self):
         data = io.BytesIO()
@@ -80,7 +88,7 @@ class PostApiTests(TestCase):
             self.assertEqual(saved.place_name, '')
             return 'テスト地区', source
 
-        with patch('posts.views.lookup_post_place', side_effect=resolve) as lookup:
+        with patch('posts.place_names.lookup_post_place', side_effect=resolve) as lookup:
             response = self.create(image=self.image(), place_name='追加で送った地名')
         self.assertEqual(response.status_code, 201, response.data)
         lookup.assert_called_once_with(Decimal('35.1234567'), Decimal('139.1234567'))
@@ -118,6 +126,97 @@ class PostApiTests(TestCase):
         self.assertEqual(post.message, '地名の取得なしでも保存する')
         self.assertEqual(post.place_name, '')
         self.assertIsNone(post.place_attribution)
+
+    def test_preview_requires_mobile_auth_and_valid_post_coordinates(self):
+        with patch('posts.place_names.lookup_post_place') as lookup:
+            self.client.credentials()
+            self.assertEqual(self.preview().status_code, 401)
+            self.client.credentials(HTTP_AUTHORIZATION='Bearer writer-token')
+            for changes in ({'latitude': '90.001'}, {'longitude': False}, {'latitude': '35.12345678'}):
+                with self.subTest(changes=changes):
+                    self.assertEqual(self.preview(**changes).status_code, 400)
+        lookup.assert_not_called()
+        self.assertFalse(Post.objects.exists())
+
+    def test_preview_does_not_create_a_post_and_private_photo_submission_reuses_it(self):
+        source = {'label': '© OpenStreetMap contributors', 'url': 'https://www.openstreetmap.org/copyright'}
+        with patch('posts.place_names.lookup_post_place', return_value=('栗田', source)) as lookup:
+            response = self.preview()
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response['Cache-Control'], 'private, no-store')
+            self.assertEqual(response.json(), {
+                'place_display': {'mode': 'auto', 'label': '栗田周辺', 'attribution': source},
+            })
+            self.assertFalse(Post.objects.exists())
+            self.assertEqual(self.preview().json(), response.json())
+            response = self.create(image=self.image(), message='修正した本文', is_published=False,
+                                   place_name='端末の指定', place_attribution='端末の出典')
+        lookup.assert_called_once_with(Decimal('35.1234567'), Decimal('139.1234567'))
+        self.assertEqual(response.status_code, 201, response.data)
+        post = Post.objects.get()
+        self.assertEqual((post.place_name, post.place_attribution), ('栗田', source))
+        self.assertEqual((post.message, post.is_public), ('修正した本文', False))
+
+    def test_preview_uses_the_new_post_location_and_is_scoped_to_the_authenticated_user(self):
+        source = {'label': 'Test source', 'url': None}
+        with patch('posts.place_names.lookup_post_place', side_effect=[
+            ('元の場所', source), ('撮り直した場所', source), ('別ユーザーの検索結果', source),
+        ]) as lookup:
+            self.assertEqual(self.preview().status_code, 200)
+            self.assertEqual(self.preview(latitude='36.6543210').status_code, 200)
+            self.assertEqual(self.create(latitude='36.6543210').status_code, 201)
+            self.assertEqual(Post.objects.get(user_id=self.owner).place_name, '撮り直した場所')
+
+            self.client.credentials(HTTP_AUTHORIZATION='Bearer other-token')
+            self.assertEqual(self.preview(user_id=self.owner.pk).json()['place_display']['label'], '別ユーザーの検索結果周辺')
+            self.assertEqual(self.create(user_id=self.owner.pk, place_name='元の場所').status_code, 201)
+            self.assertEqual(Post.objects.get(user_id=self.other).place_name, '別ユーザーの検索結果')
+        self.assertEqual(lookup.call_count, 3)
+
+    def test_preview_failure_is_cached_and_does_not_block_submission(self):
+        with patch('posts.place_names.lookup_post_place', return_value=None) as lookup:
+            self.assertEqual(self.preview().json(), {'place_display': None})
+            self.assertEqual(self.preview().json(), {'place_display': None})
+            response = self.create()
+        lookup.assert_called_once()
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Post.objects.get().place_display, {'mode': 'auto', 'label': 'この付近', 'attribution': None})
+
+    def test_post_refetches_for_expired_or_missing_preview_cache(self):
+        source = {'label': 'Test source', 'url': None}
+        for cache_miss in ('expired', 'cleared'):
+            with self.subTest(cache_miss=cache_miss):
+                cache.clear()
+                with patch('posts.place_names.lookup_post_place', side_effect=[('前の結果', source), ('新しい結果', source)]) as lookup:
+                    with patch('posts.place_names.PLACE_CACHE_SECONDS', 0 if cache_miss == 'expired' else 1800):
+                        self.assertEqual(self.preview().status_code, 200)
+                    if cache_miss == 'cleared':
+                        cache.clear()
+                    response = self.create()
+                self.assertEqual(lookup.call_count, 2)
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(Post.objects.get(pk=response.json()['id']).place_name, '新しい結果')
+
+    def test_overlapping_preview_requests_make_only_one_external_lookup(self):
+        def check_overlap(latitude, longitude):
+            self.assertEqual(self.preview().json(), {'place_display': None})
+            return '栗田', {'label': 'Test source', 'url': None}
+
+        with patch('posts.place_names.lookup_post_place', side_effect=check_overlap) as lookup:
+            self.assertEqual(self.preview().json()['place_display']['label'], '栗田周辺')
+        lookup.assert_called_once()
+        self.assertFalse(Post.objects.exists())
+
+    def test_preview_request_limit_does_not_block_post_creation(self):
+        with (
+            patch('posts.views.PostPlacePreviewThrottle.rate', '2/min'),
+            patch('posts.place_names.lookup_post_place', return_value=None) as lookup,
+        ):
+            self.assertEqual(self.preview().status_code, 200)
+            self.assertEqual(self.preview().status_code, 200)
+            self.assertEqual(self.preview(latitude='36').status_code, 429)
+            self.assertEqual(self.create().status_code, 201)
+        lookup.assert_called_once()
 
     def test_non_public_post_and_other_accounts_are_not_exposed(self):
         post_id = self.create(is_published=False, image=self.image()).data['id']

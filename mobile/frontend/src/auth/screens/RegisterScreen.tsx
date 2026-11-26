@@ -61,3 +61,22 @@ export function RegisterScreen({ auth }: Props) {
     </AppScreen>
   );
 }
+
+export function RegistrationCompleteScreen({ onContinue }: { onContinue: () => void }) {
+  return (
+    <AppScreen>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.content}>
+          <Text style={styles.brandName}>ここの声</Text>
+          <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={styles.title}>
+            会員登録が完了しました
+          </Text>
+          <Pressable accessibilityRole="button" onPress={onContinue}
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
+            <Text style={styles.buttonText}>次へ</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </AppScreen>
+  );
+}

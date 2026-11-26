@@ -81,15 +81,17 @@ async function request(path: string, token: string, options: {
   revalidate?: boolean;
   expectedStatus?: number;
   failureMessage?: string;
+  timeoutMs?: number;
 } = {}): Promise<unknown> {
-  const { method = 'GET', body, viewerCoordinates, revalidate, failureMessage, expectedStatus = method === 'POST' ? 201 : 200 } = options;
+  const { method = 'GET', body, viewerCoordinates, revalidate, failureMessage,
+    expectedStatus = method === 'POST' ? 201 : 200, timeoutMs = 25000 } = options;
   const resultMessage = failureMessage ?? unconfirmedResult[method];
   const url = getApiUrl() + path;
   const headers = readHeaders(token, viewerCoordinates);
   if (revalidate) headers['Cache-Control'] = 'no-cache, no-store';
   if (typeof body === 'string') headers['Content-Type'] = 'application/json';
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
       method,
@@ -187,12 +189,17 @@ export type NewPost = {
   is_published: boolean;
 };
 
+function formatPostCoordinates({ latitude, longitude }: Pick<NewPost, 'latitude' | 'longitude'>) {
+  return { latitude: latitude.toFixed(7), longitude: longitude.toFixed(7) };
+}
+
 export async function createPost(postData: NewPost, token: string): Promise<SavedPost> {
   if (!postData.message?.trim() && !postData.image) throw new PostApiError('メッセージまたは写真を入力してください。');
   
   const formData = new FormData();
-  formData.append('latitude', postData.latitude.toFixed(7));
-  formData.append('longitude', postData.longitude.toFixed(7));
+  const coordinates = formatPostCoordinates(postData);
+  formData.append('latitude', coordinates.latitude);
+  formData.append('longitude', coordinates.longitude);
   formData.append('is_published', String(postData.is_published));
   formData.append('message', postData.message?.trim() || '');
 
@@ -241,6 +248,34 @@ function parsePlaceDisplay(value: unknown): PostPlaceDisplay | undefined {
   const attribution = parsePlaceAttribution(value.attribution);
   if (value.mode === 'manual' && !attribution) return undefined;
   return { mode: value.mode, label: value.label, attribution };
+}
+
+/** 入力内容だけを直して確認画面へ戻る場合、同じ座標への通信をまとめる。 */
+export function createPostPlacePreviewLoader(token: string) {
+  const previews = new Map<string, { result: Promise<PostPlaceDisplay | null>; expiresAt: number }>();
+
+  return (coordinates: Pick<NewPost, 'latitude' | 'longitude'>) => {
+    const formatted = formatPostCoordinates(coordinates);
+    const key = `${Number(formatted.latitude)},${Number(formatted.longitude)}`;
+    const cached = previews.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.result;
+
+    const result = request('place-preview/', token, {
+      method: 'POST',
+      body: JSON.stringify(formatted),
+      expectedStatus: 200,
+      timeoutMs: 7000,
+      failureMessage: '投稿場所を取得できませんでした。',
+    }).then(data => {
+      const place = isRecord(data) ? parsePlaceDisplay(data.place_display) : undefined;
+      return place?.mode === 'auto' && place.attribution ? place : null;
+    }, () => null);
+
+    const entry = { result, expiresAt: Infinity };
+    previews.set(key, entry);
+    void result.then(place => { entry.expiresAt = Date.now() + (place ? 30 * 60_000 : 60_000); });
+    return result;
+  };
 }
 
 export function getPostPlaceDisplay(post: SavedPost): PostPlaceDisplay {

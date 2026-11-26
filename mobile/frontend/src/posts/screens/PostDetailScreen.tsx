@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { ActionSheetIOS, Alert, Platform, Pressable, StyleSheet, Text, View, Image, ScrollView, ActivityIndicator, TouchableOpacity, SafeAreaView, Modal } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { deletePost, getPostById, getPostImage, getPostPlaceDisplay, PostApiError, hidePostApi, updatePostVisibility } from '../postService';
-import type { PostPlaceDisplay, SavedPost } from '../postService';
+import type { PostPlaceDisplay, SavedPost, ViewerCoordinates } from '../postService';
 import { formatPostDate } from '../formatPostDate';
 import { getCurrentLocation } from '../../location/getCurrentLocation';
 import { PostPlaceCredits } from '../components/PostPlaceCredits';
@@ -59,7 +59,9 @@ function readErrorMessage(reason: unknown, fallback: string) {
 /**
  * 投稿データの型定義
  */
-export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden, onVisibilityChanged, onPlaceChanged, sheet }: {
+export function PostDetailScreen({
+  route, navigation, token, onDeleted, onHidden, onVisibilityChanged, onPlaceChanged, viewerAccess, sheet,
+}: {
   route: { params: { postId: number } };
   navigation: { goBack: () => void };
   token: string;
@@ -67,6 +69,10 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   onHidden?: () => void;
   onVisibilityChanged?: () => void;
   onPlaceChanged?: (postId: number, place: PostPlaceDisplay) => void;
+  viewerAccess?: {
+    getCoordinates: () => ViewerCoordinates | undefined;
+    onOpened: () => void;
+  };
   sheet?: PostDetailSheetControls;
 }) {
   // 一覧画面から渡された投稿IDを受け取る
@@ -91,6 +97,8 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
   const deletionPending = useRef(false);
   const visibilityPending = useRef(false);
   const highidingPending = useRef(false);
+  const currentViewerAccess = useRef(viewerAccess);
+  useLayoutEffect(() => { currentViewerAccess.current = viewerAccess; }, [viewerAccess]);
   const isOwnPost = post?.id === postId && post.is_own === true;
   const canChangeVisibility = isOwnPost && Boolean(onVisibilityChanged) && post.is_admin_hidden !== true;
   /**
@@ -105,6 +113,17 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
     setImageError('');
     const load = async () => {
       try {
+        const access = currentViewerAccess.current;
+        if (access) {
+          const coordinates = access.getCoordinates();
+          if (!coordinates) throw new PostApiError(cannotReadPost, 404);
+          const data = await getPostById(postId, token, coordinates);
+          if (!active || !currentViewerAccess.current?.getCoordinates()) return;
+          currentViewerAccess.current.onOpened();
+          setNeedsViewerLocation(true);
+          setPost(data);
+          return;
+        }
         let data: SavedPost;
         let needsLocation = false;
         try {
@@ -137,9 +156,14 @@ export function PostDetailScreen({ route, navigation, token, onDeleted, onHidden
     setImageError('');
     const load = async () => {
       try {
-        const coordinates = needsViewerLocation ? await measureViewerCoordinates() : undefined;
+        const access = currentViewerAccess.current;
+        const coordinates = access ? access.getCoordinates() : needsViewerLocation ? await measureViewerCoordinates() : undefined;
+        if (access && !coordinates) throw new PostApiError('写真を取得するには投稿場所の250m以内に入ってください。');
         if (!active) return;
         const uri = await getPostImage(imagePostId, token, coordinates);
+        if (access && !currentViewerAccess.current?.getCoordinates()) {
+          throw new PostApiError('写真を取得するには投稿場所の250m以内に入ってください。');
+        }
         if (active) setImageUri(uri);
       } catch (reason) {
         if (active) setImageError(readErrorMessage(reason, '写真を取得できませんでした。'));
