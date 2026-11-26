@@ -10,6 +10,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 
 from .authentication import MobileBearerAuthentication
 from .images import (
@@ -18,12 +19,12 @@ from .images import (
 )
 from .models import HiddenPost, Post, PostReport
 from .nearby import validated_coordinates, viewer_coordinates
-from .place_names import PostPlaceServiceError, lookup_post_place
+from .place_names import PostPlaceServiceError, lookup_cached_post_place
 from .place_tags import search_place_candidates, verify_manual_place
 from .read_access import readable_posts, visible_public_posts
 from .serializers import (
-    PostDetailSerializer, PostListSerializer, PostPlaceSearchSerializer, PostPlaceTagSerializer, PostReportSerializer,
-    PostSerializer,
+    PostDetailSerializer, PostListSerializer, PostPlacePreviewSerializer, PostPlaceSearchSerializer,
+    PostPlaceTagSerializer, PostReportSerializer, PostSerializer,
 )
 
 
@@ -62,7 +63,7 @@ class PostListCreateAPIView(PostAccess, generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         post = self._save_post(serializer)
-        place = lookup_post_place(post.latitude, post.longitude)
+        place = lookup_cached_post_place(self.request.user.pk, post.latitude, post.longitude)
         if place is not None:
             name, attribution = place
             try:
@@ -112,6 +113,26 @@ class PostListCreateAPIView(PostAccess, generics.ListCreateAPIView):
 class PostPhotoSaveError(APIException):
     status_code = 503
     default_detail = '写真を保存できませんでした。時間をおいてもう一度お試しください。'
+
+
+class PostPlacePreviewThrottle(UserRateThrottle):
+    scope = 'post_place_preview'
+    rate = '20/min'
+
+
+class PostPlacePreviewAPIView(PostAccess, generics.GenericAPIView):
+    parser_classes = [JSONParser]
+    serializer_class = PostPlacePreviewSerializer
+    throttle_classes = [PostPlacePreviewThrottle]
+
+    def post(self, request):
+        data = self.get_serializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        place = lookup_cached_post_place(request.user.pk, **data.validated_data)
+        if place is None:
+            return Response({'place_display': None})
+        name, attribution = place
+        return Response({'place_display': {'mode': 'auto', 'label': f'{name}周辺', 'attribution': attribution}})
 
 
 class PublicPostListAPIView(PostAccess, generics.ListAPIView):

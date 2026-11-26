@@ -100,6 +100,7 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
     navigation.navigate('PostConfirm', {
       message,
       imageUri: photo?.uri ?? null,
+      imageAspectRatio: photo ? photo.width / photo.height : undefined,
       latitude,
       longitude,
       isPublished,
@@ -165,6 +166,10 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
 
           <PostVisibilityOptions value={isPublished} onChange={setIsPublished} disabled={cameraOpen} />
 
+          <Text style={styles.placeLookupNotice}>
+            地名を表示するため、確認画面へ進む際に投稿地点の緯度・経度をGeoapifyに送信します。本人のみ公開の場合も対象です。
+          </Text>
+
           {/* 投稿位置が決まってから確認画面へ進む。 */}
           <TouchableOpacity 
             style={[styles.button, !canConfirm && styles.buttonDisabled]}
@@ -199,6 +204,7 @@ const styles = StyleSheet.create({
   removeImageButtonText: { color: '#D9534F', fontSize: 13, fontWeight: '600' },
   button: { height: 52, backgroundColor: uiColors.primaryFill, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   locationNotice: { marginBottom: 12, color: uiColors.primary },
+  placeLookupNotice: { marginTop: 16, marginBottom: 12, fontSize: 12, lineHeight: 19, color: uiColors.primary },
   locationRetry: { minHeight: 44, justifyContent: 'center' },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: uiColors.onPrimary, fontSize: 15, fontWeight: '700' },

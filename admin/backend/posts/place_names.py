@@ -9,6 +9,8 @@ from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, build_opener
 
 from django.conf import settings
+from django.core.cache import cache
+from django.utils.crypto import salted_hmac
 
 from .nearby import distance_meters, validated_coordinates
 
@@ -18,6 +20,10 @@ REVERSE_GEOCODING_URL = 'https://api.geoapify.com/v1/geocode/reverse'
 LOOKUP_TIMEOUT_SECONDS = 2
 MAX_RESPONSE_BYTES = 64 * 1024
 MAX_RESULTS = 3
+PLACE_CACHE_SECONDS = 30 * 60
+EMPTY_PLACE_CACHE_SECONDS = 60
+PLACE_LOOKUP_LOCK_SECONDS = 30
+CACHE_MISS = object()
 JAPANESE_STREET_RADIUS_METERS = 100
 SOURCE_URLS = {
     'openstreetmap': 'https://www.openstreetmap.org/copyright',
@@ -199,3 +205,28 @@ def lookup_post_place(latitude, longitude, *, strict=False):
     if place is None:
         logger.warning('Geoapify: No usable place name and attribution.')
     return place
+
+
+def lookup_cached_post_place(user_id, latitude, longitude):
+    # 確認APIと投稿APIは小数7桁のDecimalに揃える。-0と+0は同じ地点として扱う。
+    coordinates = f'{latitude or 0:.7f}:{longitude or 0:.7f}'
+    fingerprint = salted_hmac('posts.place-preview.v1', f'{user_id}:{coordinates}').hexdigest()
+    key = f'post-place:{fingerprint}'
+    place = cache.get(key, CACHE_MISS)
+    if place is not CACHE_MISS:
+        return place
+
+    lock_key = f'{key}:lookup'
+    if not cache.add(lock_key, True, timeout=PLACE_LOOKUP_LOCK_SECONDS):
+        # 別リクエストが照会中なら、追加の照会を起こさない。
+        return cache.get(key)
+
+    try:
+        place = cache.get(key, CACHE_MISS)
+        if place is CACHE_MISS:
+            place = lookup_post_place(latitude, longitude)
+            timeout = EMPTY_PLACE_CACHE_SECONDS if place is None else PLACE_CACHE_SECONDS
+            cache.set(key, place, timeout=timeout)
+        return place
+    finally:
+        cache.delete(lock_key)

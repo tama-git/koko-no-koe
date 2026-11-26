@@ -11,9 +11,15 @@ export type MapSnapshot = {
 };
 
 const POST_PIN_COLOR = '#627388';
-const POST_PIN_BOUNCE_MS = 500;
+const OUTSIDE_PIN_FILL = '#D1D3D5';
+const OUTSIDE_PIN_STROKE = '#686D72';
+const DISTANCE_LINE_DURATION_MS = 500;
+const RANGE_TRANSITION_MS = 500;
 const POST_PIN_CLUSTER_MAX_ZOOM = 16;
 const POST_PIN_FOCUS_ZOOM = POST_PIN_CLUSTER_MAX_ZOOM + 1;
+const MARKER_PREFETCH_PADDING = 0.25;
+const LOCATION_CAMERA_DURATION_MS = 500;
+const CURRENT_LOCATION_ZOOM = 16;
 
 // 固定バージョンとハッシュで、WebView内で実行する配信ファイルを限定する。
 export const openFreeMapDocument = `<!doctype html>
@@ -29,25 +35,14 @@ export const openFreeMapDocument = `<!doctype html>
   <script src="https://unpkg.com/supercluster@8.0.1/dist/supercluster.min.js" crossorigin="anonymous"></script>
   <style>
     html, body, #map { width: 100%; height: 100%; margin: 0; overflow: hidden; background: ${uiColors.background}; }
-    #range { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-    .current-dot { width: 18px; height: 18px; }
+    #range, #post-distance-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .current-dot { width: 18px; height: 18px; z-index: 2; pointer-events: none; }
     .current-bearing { position: absolute; inset: 0; pointer-events: none; }
     .current-cone { position: absolute; left: 50%; top: 50%; margin: -56px 0 0 -56px;
       width: 112px; height: 112px; transition: transform 160ms cubic-bezier(.22, .61, .36, 1); }
     .current-dot::after { content: ''; position: absolute; inset: 0; border: 2px solid white;
       border-radius: 50%; background: #147df1; box-shadow: 0 0 0 2px #147df14a; }
-    .post-pin > svg { transform-origin: 50% 85%; }
     .post-pin-selected { z-index: 1; }
-    .post-pin-arrived > svg { transform: scale(1.2); }
-    .post-pin-bounce > svg {
-      animation: post-pin-bounce ${POST_PIN_BOUNCE_MS}ms ease-out var(--post-pin-delay, 0ms) both;
-    }
-    @keyframes post-pin-bounce {
-      0% { transform: translateY(0) scale(var(--post-pin-bounce-scale, 1)); }
-      36% { transform: translateY(-9px) scale(var(--post-pin-bounce-scale, 1)); }
-      68% { transform: translateY(0) scale(var(--post-pin-bounce-scale, 1)); }
-      100% { transform: translateY(0) scale(1.2); }
-    }
     .post-pin-bubble, .cluster-marker {
       width: 44px;
       height: 44px;
@@ -74,11 +69,19 @@ export const openFreeMapDocument = `<!doctype html>
       stroke-linejoin: round;
       transition: fill 180ms ease-out;
     }
-    .post-pin-bubble.post-pin-selected > svg { color: #ffffff; transform: scale(1.12); }
-    .post-pin-bubble.post-pin-selected .post-pin-bubble-shape { fill: ${POST_PIN_COLOR}; }
+    .post-pin-bubble.post-pin-selected > svg { transform: scale(1.12); }
+    .post-pin-bubble.post-pin-selected:not(.post-pin-outside) > svg { color: #ffffff; }
+    .post-pin-bubble.post-pin-selected:not(.post-pin-outside) .post-pin-bubble-shape { fill: ${POST_PIN_COLOR}; }
+    .post-pin-bubble.post-pin-outside > svg { color: ${OUTSIDE_PIN_STROKE}; }
+    .post-pin-outside .post-pin-bubble-shape { fill: ${OUTSIDE_PIN_FILL}; stroke: ${OUTSIDE_PIN_STROKE}; }
+    .post-pin-range-transition > svg { transition: transform 180ms ease-out, color ${RANGE_TRANSITION_MS}ms ease-in-out; }
+    .post-pin-range-transition .post-pin-bubble-shape {
+      transition: fill ${RANGE_TRANSITION_MS}ms ease-in-out, stroke ${RANGE_TRANSITION_MS}ms ease-in-out;
+    }
     @media (prefers-reduced-motion: reduce) {
-      .post-pin-bounce > svg { animation: none; }
-      .post-pin-bubble > svg, .post-pin-bubble-shape { transition: none; }
+      .current-cone, .post-pin-bubble > svg, .post-pin-bubble-shape, .post-pin-range-transition .post-pin-bubble-shape {
+        transition: none;
+      }
     }
     .cluster-marker-count {
       box-sizing: border-box;
@@ -100,12 +103,18 @@ export const openFreeMapDocument = `<!doctype html>
 <body>
 <div id="map"></div>
 <canvas id="range" aria-hidden="true"></canvas>
+<svg id="post-distance-overlay" aria-hidden="true">
+  <line id="post-distance-line" visibility="hidden" stroke="${OUTSIDE_PIN_STROKE}"
+        stroke-width="2.25" stroke-linecap="round" stroke-dasharray="5 6" />
+</svg>
 <script type="application/json" id="initial-map-snapshot">null</script>
 <script>
   const send = message => window.ReactNativeWebView?.postMessage(JSON.stringify(message));
   const mapElement = document.getElementById('map');
   const mask = document.getElementById('range');
   const context = mask.getContext('2d');
+  const distanceOverlay = document.getElementById('post-distance-overlay');
+  const distanceLine = document.getElementById('post-distance-line');
   const radius = ${RADIUS_METERS};
   const radians = Math.PI / 180;
   const initial = JSON.parse(document.getElementById('initial-map-snapshot').textContent);
@@ -122,18 +131,31 @@ export const openFreeMapDocument = `<!doctype html>
   let headingAngle = Number.isFinite(initial?.heading) ? initial.heading : null;
   let latestHeadingRequestId = 0;
   let centered = false;
+  let trackingMode = 'free';
+  let positionTrackingBearing = 0;
+  let trackingBottomInset = 0;
+  let trackingCameraFrame = null;
+  let userCameraMoving = false;
+  let mapTouchCount = 0;
 
   // クラスタリング管理用の変数
   let clusterIndex = null;
-  const activeMarkers = [];
+  const clusterMarkers = new Map();
+  let markerPrefetch = null;
+  let markerUpdateFrame = null;
   const activePostPins = new Map();
-  const postPinCoordinates = new Map();
+  const postPinsById = new Map();
   let selectedPostPinId = null;
-  let pinBounceStartedAt = null;
-  let keepPostPinScale = false;
+  let hasExtraSelectedMarker = false;
   let pendingPostPinCenter = null;
+  let postPinCenterSuppressed = false;
   let pinModeRevision = initial?.modeRevision ?? 0;
   let appliedPinModeRevision = null;
+  let distanceLineId = null;
+  let distanceLineProgress = 0;
+  let distanceLineOpacity = 0;
+  let distanceLineOpacityTarget = 0;
+  let distanceLineFrame = null;
 
   function walkingStyle(style) {
     const poiClass = ['get', 'class'];
@@ -212,58 +234,143 @@ export const openFreeMapDocument = `<!doctype html>
     const selected = id === selectedPostPinId;
     element.classList.toggle('post-pin-selected', selected);
     element.setAttribute('aria-pressed', String(selected));
-    if (element.classList.contains('post-pin-bubble')) return;
-
-    element.classList.toggle('post-pin-arrived', selected && (keepPostPinScale || pinBounceStartedAt !== null));
-    const restarting = selected && element.classList.contains('post-pin-bounce');
-    element.classList.remove('post-pin-bounce');
-    if (!selected || pinBounceStartedAt === null) return;
-    if (restarting) void element.offsetWidth;
-
-    const elapsed = performance.now() - pinBounceStartedAt;
-    if (elapsed < ${POST_PIN_BOUNCE_MS}) {
-      element.style.setProperty('--post-pin-delay', -elapsed + 'ms');
-      element.style.setProperty('--post-pin-bounce-scale', keepPostPinScale ? '1.2' : '1');
-      element.classList.add('post-pin-bounce');
-    }
   }
 
   function selectPostPin(id) {
-    if (id === null && selectedPostPinId === null) return;
-
+    if (id === selectedPostPinId) return;
     const previousId = selectedPostPinId;
-    const settled = pinBounceStartedAt !== null && (
-      performance.now() - pinBounceStartedAt >= ${POST_PIN_BOUNCE_MS}
-      || window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    );
-    keepPostPinScale = id !== null && previousId === id && (keepPostPinScale || settled);
     selectedPostPinId = id;
-    pinBounceStartedAt = null;
+    postPinCenterSuppressed = false;
     const shouldStopCentering = pendingPostPinCenter !== null;
     pendingPostPinCenter = null;
     if (shouldStopCentering) map.stop();
-    const previous = activePostPins.get(previousId);
-    if (previous && previousId !== id) applyPostPinSelection(previousId, previous);
-    const selected = activePostPins.get(id);
-    if (selected) applyPostPinSelection(id, selected);
+    if (id !== null) releaseLocationCamera();
+    if (hasExtraSelectedMarker || (postPinsById.has(id) && !activePostPins.has(id))) {
+      updateClusterMarkers();
+    } else {
+      const previous = activePostPins.get(previousId);
+      if (previous) applyPostPinSelection(previousId, previous);
+      const selected = activePostPins.get(id);
+      if (selected) applyPostPinSelection(id, selected);
+    }
+    syncDistanceLine();
+  }
+
+  function distancePin() {
+    const pin = postPinsById.get(selectedPostPinId);
+    return current && pin && !pin.isOwn && !pin.withinRadius ? pin : null;
+  }
+
+  function wrapLongitude(longitude, reference) {
+    return longitude + 360 * Math.round((reference - longitude) / 360);
+  }
+
+  function distanceEndpoints(pin) {
+    // 地図上の青い現在地マーカーの補間にも合わせ、日付変更線をまたぐ場合は近い世界のコピーを使う。
+    const origin = displayedPosition ?? current;
+    const longitude = wrapLongitude(origin.longitude, map.getCenter().lng);
+    return [[longitude, origin.latitude], [wrapLongitude(pin.longitude, longitude), pin.latitude]];
+  }
+
+  function drawDistanceLine() {
+    const pin = postPinsById.get(distanceLineId);
+    if (!current || !pin || distanceLineId !== selectedPostPinId || distanceLineProgress <= 0 || distanceLineOpacity <= 0) {
+      distanceLine.setAttribute('visibility', 'hidden');
+      return;
+    }
+    const [origin, target] = distanceEndpoints(pin).map(point => map.project(point));
+    distanceLine.setAttribute('x1', origin.x);
+    distanceLine.setAttribute('y1', origin.y);
+    distanceLine.setAttribute('x2', origin.x + (target.x - origin.x) * distanceLineProgress);
+    distanceLine.setAttribute('y2', origin.y + (target.y - origin.y) * distanceLineProgress);
+    distanceLine.setAttribute('opacity', distanceLineOpacity);
+    distanceLine.setAttribute('visibility', 'visible');
+  }
+
+  function cancelDistanceLineAnimation() {
+    if (distanceLineFrame !== null) cancelAnimationFrame(distanceLineFrame);
+    distanceLineFrame = null;
+  }
+
+  function animateDistanceLine(toProgress, toOpacity, duration) {
+    cancelDistanceLineAnimation();
+    distanceLineOpacityTarget = toOpacity;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      distanceLineProgress = toProgress;
+      distanceLineOpacity = toOpacity;
+      return;
+    }
+    const startedAt = performance.now();
+    const startProgress = distanceLineProgress;
+    const startOpacity = distanceLineOpacity;
+    function frame(now) {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = toOpacity === startOpacity ? 1 - (1 - progress) ** 2
+        : (1 - Math.cos(progress * Math.PI)) / 2;
+      distanceLineProgress = startProgress + (toProgress - startProgress) * eased;
+      distanceLineOpacity = startOpacity + (toOpacity - startOpacity) * eased;
+      drawDistanceLine();
+      distanceLineFrame = progress < 1 ? requestAnimationFrame(frame) : null;
+    }
+    distanceLineFrame = requestAnimationFrame(frame);
+  }
+
+  function syncDistanceLine() {
+    const outside = distancePin();
+    if (outside) {
+      if (outside.id !== distanceLineId) {
+        distanceLineId = outside.id;
+        distanceLineProgress = 0;
+        distanceLineOpacity = 1;
+        animateDistanceLine(1, 1, ${DISTANCE_LINE_DURATION_MS});
+      } else if (distanceLineOpacityTarget === 0) {
+        animateDistanceLine(1, 1, ${RANGE_TRANSITION_MS});
+      }
+    } else if (current && distanceLineId === selectedPostPinId && postPinsById.get(distanceLineId)?.withinRadius) {
+      if (distanceLineOpacityTarget !== 0) animateDistanceLine(distanceLineProgress, 0, ${RANGE_TRANSITION_MS});
+    } else if (distanceLineId !== null) {
+      cancelDistanceLineAnimation();
+      distanceLineId = null;
+      distanceLineProgress = 0;
+      distanceLineOpacity = 0;
+      distanceLineOpacityTarget = 0;
+    }
+    drawDistanceLine();
   }
 
   function centerPostPin(id, bottomInset) {
-    if (id !== selectedPostPinId) return;
-    const coordinates = activePostPins.get(id)?.getLngLat() ?? postPinCoordinates.get(id);
-    if (!coordinates) return;
+    if (id !== selectedPostPinId || postPinCenterSuppressed || trackingMode !== 'free') return;
+    const pin = postPinsById.get(id);
+    if (!pin) return;
 
     const inset = Math.max(0, bottomInset);
     const visibleHeight = mapElement.clientHeight - inset;
     if (visibleHeight < 80) return;
 
-    const target = { id, coordinates, x: mapElement.clientWidth / 2, y: visibleHeight / 2 };
-    const [dx, dy] = postPinCenterOffset(target);
-    const alreadyAtZoom = Math.abs(map.getZoom() - ${POST_PIN_FOCUS_ZOOM}) < 0.001;
-    if (alreadyAtZoom && !map.isMoving() && Math.abs(dx) < 1 && Math.abs(dy) < 1) {
-      bouncePostPin(id);
-      return;
+    if (distancePin()) {
+      const [[fromLng, fromLat], [toLng, toLat]] = distanceEndpoints(pin);
+      const margin = Math.min(36, visibleHeight / 4, mapElement.clientWidth / 4);
+      const camera = map.cameraForBounds([
+        [Math.min(fromLng, toLng), Math.min(fromLat, toLat)],
+        [Math.max(fromLng, toLng), Math.max(fromLat, toLat)],
+      ], {
+        bearing: map.getBearing(), maxZoom: ${POST_PIN_FOCUS_ZOOM},
+        padding: { top: margin, bottom: inset + margin, left: margin, right: margin },
+      });
+      if (camera) {
+        const target = { id };
+        pendingPostPinCenter = target;
+        map.easeTo({ ...camera, duration: 500 }, { postPinCenter: target });
+        return;
+      }
     }
+
+    const coordinates = activePostPins.get(id)?.getLngLat() ?? [pin.longitude, pin.latitude];
+    const target = { id, coordinates, x: mapElement.clientWidth / 2, y: visibleHeight / 2 };
+    const point = map.project(coordinates);
+    const [dx, dy] = [point.x - target.x, point.y - target.y];
+    const alreadyAtZoom = Math.abs(map.getZoom() - ${POST_PIN_FOCUS_ZOOM}) < 0.001;
+    if (alreadyAtZoom && !map.isMoving() && Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
 
     pendingPostPinCenter = target;
     const eventData = { postPinCenter: target };
@@ -275,40 +382,27 @@ export const openFreeMapDocument = `<!doctype html>
     }
   }
 
-  function postPinCenterOffset(target) {
-    const point = map.project(target.coordinates);
-    return [point.x - target.x, point.y - target.y];
-  }
-
-  function bouncePostPin(id) {
-    pinBounceStartedAt = performance.now();
-    const marker = activePostPins.get(id);
-    if (marker) applyPostPinSelection(id, marker);
-  }
-
   function finishPostPinCenter(event) {
-    const target = pendingPostPinCenter;
-    if (!target || event.postPinCenter !== target) return;
-    pendingPostPinCenter = null;
-    const [dx, dy] = postPinCenterOffset(target);
-    if (Math.abs(map.getZoom() - ${POST_PIN_FOCUS_ZOOM}) < 0.001 && Math.abs(dx) < 1 && Math.abs(dy) < 1) {
-      bouncePostPin(target.id);
-    }
+    if (pendingPostPinCenter && event.postPinCenter === pendingPostPinCenter) pendingPostPinCenter = null;
   }
 
   function clearMarkers() {
-    for (const marker of activeMarkers) {
-      marker.remove();
-    }
-    activeMarkers.length = 0;
+    clearClusterMarkers();
+    markerPrefetch = null;
+    for (const marker of activePostPins.values()) marker.remove();
     activePostPins.clear();
+    hasExtraSelectedMarker = false;
   }
 
-  function createPostMarker({ withinRadius, isOwn }) {
-    if (!withinRadius) return new maplibregl.Marker({ color: isOwn ? '#598879' : '#68737E' });
+  function clearClusterMarkers() {
+    for (const marker of clusterMarkers.values()) marker.remove();
+    clusterMarkers.clear();
+  }
 
+  function createPostMarker({ isOwn }) {
     const element = document.createElement('div');
-    element.className = 'post-pin-bubble';
+    element.className = 'post-pin post-pin-bubble';
+    if (!isOwn) element.classList.add('post-pin-range-transition');
     const symbol = isOwn
       ? '<circle cx="16" cy="11.5" r="3.5"/>' +
         '<path d="M9.5 23v-2.8a6.5 6.5 0 0 1 13 0V23Z"/>'
@@ -320,88 +414,188 @@ export const openFreeMapDocument = `<!doctype html>
     return new maplibregl.Marker({ element, anchor: 'bottom' });
   }
 
-  function updateClusterMarkers() {
-    if (!map || !clusterIndex) return;
-    clearMarkers();
+  function updatePostPinAppearance(pin, marker) {
+    const element = marker.getElement();
+    element.classList.toggle('post-pin-outside', !pin.withinRadius && !pin.isOwn);
+    const label = pin.isOwn || (pin.withinRadius && pin.nearby) ? '投稿詳細を開く' : '投稿までの距離を表示';
+    element.setAttribute('aria-label', pin.isOwn ? '自分の投稿：' + label : label);
+    applyPostPinSelection(pin.id, marker);
+  }
 
-    const bounds = map.getBounds();
-    const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
+  function showPostPinMarker(pin, renderedModeRevision) {
+    const existing = activePostPins.get(pin.id);
+    if (existing) {
+      const position = existing.getLngLat();
+      if (position.lat !== pin.latitude || (position.lng - pin.longitude) % 360 !== 0) {
+        existing.setLngLat([pin.longitude, pin.latitude]);
+      }
+      updatePostPinAppearance(pin, existing);
+      return;
+    }
+
+    const marker = createPostMarker(pin);
+    const element = marker.getElement();
+    element.setAttribute('role', 'button');
+    element.tabIndex = 0;
+
+    const select = () => {
+      if (renderedModeRevision !== pinModeRevision || activePostPins.get(pin.id) !== marker) return;
+      send({ type: 'pin', id: pin.id, modeRevision: renderedModeRevision });
+    };
+    element.addEventListener('click', select);
+    element.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        select();
+      }
+    });
+
+    updatePostPinAppearance(pin, marker);
+    marker.setLngLat([pin.longitude, pin.latitude]).addTo(map);
+    activePostPins.set(pin.id, marker);
+  }
+
+  function markerBounds(paddingRatio) {
+    const { clientWidth: width, clientHeight: height } = mapElement;
+    const padX = width * paddingRatio;
+    const padY = height * paddingRatio;
+    // 画面の四隅を座標に変換し、地図が回転していても各辺の外側に余裕を取る。
+    const corners = [
+      [-padX, -padY], [width + padX, -padY],
+      [-padX, height + padY], [width + padX, height + padY],
+    ].map(point => map.unproject(point));
+    const longitudes = corners.map(point => point.lng);
+    const latitudes = corners.map(point => point.lat);
+    return [Math.min(...longitudes), Math.min(...latitudes), Math.max(...longitudes), Math.max(...latitudes)];
+  }
+
+  function containsMarkerBounds([west, south, east, north], [viewWest, viewSouth, viewEast, viewNorth]) {
+    if (viewSouth < south || viewNorth > north) return false;
+    if (east - west >= 360) return true;
+    // 日付変更線を越えて地図の中心が折り返しても、同じ世界のコピーで比較する。
+    const viewCenter = (viewWest + viewEast) / 2;
+    const offset = wrapLongitude(viewCenter, (west + east) / 2) - viewCenter;
+    return viewWest + offset >= west && viewEast + offset <= east;
+  }
+
+  function refreshMarkerViewport() {
+    cancelMarkerViewportFrame();
+    if (!map || !clusterIndex) return;
+    if (markerPrefetch?.zoom === Math.floor(map.getZoom()) &&
+        containsMarkerBounds(markerPrefetch.refreshBounds, markerBounds(0))) return;
+    updateClusterMarkers();
+  }
+
+  function scheduleMarkerViewportCheck() {
+    if (markerUpdateFrame !== null) return;
+    markerUpdateFrame = requestAnimationFrame(() => {
+      markerUpdateFrame = null;
+      refreshMarkerViewport();
+    });
+  }
+
+  function cancelMarkerViewportFrame() {
+    if (markerUpdateFrame === null) return;
+    cancelAnimationFrame(markerUpdateFrame);
+    markerUpdateFrame = null;
+  }
+
+  function showClusterMarker(cluster, renderedModeRevision) {
+    const id = cluster.id;
+    if (clusterMarkers.has(id)) return;
+    const coordinates = cluster.geometry.coordinates;
+    const pointCount = cluster.properties.point_count;
+    const element = document.createElement('div');
+    element.className = 'cluster-marker';
+    const count = document.createElement('span');
+    count.className = 'cluster-marker-count';
+    count.textContent = String(pointCount);
+    element.appendChild(count);
+    element.setAttribute('role', 'button');
+    element.setAttribute('aria-label', pointCount + '件の投稿を拡大表示');
+    element.tabIndex = 0;
+
+    const expand = () => {
+      if (renderedModeRevision !== pinModeRevision || clusterMarkers.get(id) !== marker) return;
+      releaseLocationCamera();
+      const nextZoom = Math.min(clusterIndex.getClusterExpansionZoom(id), 20);
+      map.flyTo({ center: coordinates, zoom: nextZoom, duration: 500 });
+    };
+    element.addEventListener('click', expand);
+    element.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        expand();
+      }
+    });
+
+    const marker = new maplibregl.Marker({ element }).setLngLat(coordinates).addTo(map);
+    clusterMarkers.set(id, marker);
+  }
+
+  function updateClusterMarkers() {
+    if (!map || !clusterIndex || !mapElement.clientWidth || !mapElement.clientHeight) return;
+
     const zoom = Math.floor(map.getZoom());
-    const clusters = clusterIndex.getClusters(bbox, zoom);
+    const clusters = clusterIndex.getClusters(markerBounds(${MARKER_PREFETCH_PADDING}), zoom);
+    // 余白の半分が残っている段階で補充し、速いドラッグや慣性移動に備える。
+    markerPrefetch = { zoom, refreshBounds: markerBounds(${MARKER_PREFETCH_PADDING} / 2) };
+    const visiblePostIds = new Set();
+    const visibleClusterIds = new Set();
     const renderedModeRevision = pinModeRevision;
 
     for (const cluster of clusters) {
-      const [longitude, latitude] = cluster.geometry.coordinates;
-      const { cluster: isCluster, point_count: pointCount } = cluster.properties;
-
-      if (isCluster) {
-        const el = document.createElement('div');
-        el.className = 'cluster-marker';
-        const count = document.createElement('span');
-        count.className = 'cluster-marker-count';
-        count.textContent = String(pointCount);
-        el.appendChild(count);
-        el.setAttribute('role', 'button');
-        el.setAttribute('aria-label', pointCount + '件の投稿を拡大表示');
-        el.tabIndex = 0;
-
-        const expand = () => {
-          if (renderedModeRevision !== pinModeRevision || !activeMarkers.includes(marker)) return;
-          const nextZoom = Math.min(clusterIndex.getClusterExpansionZoom(cluster.id), 20);
-          map.flyTo({ center: [longitude, latitude], zoom: nextZoom, duration: 500 });
-        };
-
-        el.addEventListener('click', expand);
-        el.addEventListener('keydown', event => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            expand();
-          }
-        });
-
-        const marker = new maplibregl.Marker({ element: el })
-          .setLngLat([longitude, latitude])
-          .addTo(map);
-        activeMarkers.push(marker);
+      if (cluster.properties.cluster) {
+        showClusterMarker(cluster, renderedModeRevision);
+        visibleClusterIds.add(cluster.id);
       } else {
-        const pinProps = cluster.properties;
-        const marker = createPostMarker(pinProps);
-        const element = marker.getElement();
-        element.classList.add('post-pin');
-        element.setAttribute('role', 'button');
-        const label = pinProps.isOwn || pinProps.nearby ? '投稿詳細を開く' : '投稿までの距離を表示';
-        element.setAttribute('aria-label', pinProps.isOwn ? '自分の投稿：' + label : label);
-        element.tabIndex = 0;
-
-        const select = () => {
-          if (renderedModeRevision !== pinModeRevision || activePostPins.get(pinProps.id) !== marker) return;
-          send({ type: 'pin', id: pinProps.id, modeRevision: renderedModeRevision });
-        };
-        element.addEventListener('click', select);
-        element.addEventListener('keydown', event => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            select();
-          }
-        });
-
-        marker.setLngLat([longitude, latitude]).addTo(map);
-        activeMarkers.push(marker);
-        activePostPins.set(pinProps.id, marker);
-        applyPostPinSelection(pinProps.id, marker);
+        const pin = postPinsById.get(cluster.properties.id);
+        if (pin) {
+          showPostPinMarker(pin, renderedModeRevision);
+          visiblePostIds.add(pin.id);
+        }
+      }
+    }
+    // 選択中のピンがクラスタに重なっていても、境界での配色の切り替えを継続して表示する。
+    const selected = postPinsById.get(selectedPostPinId);
+    hasExtraSelectedMarker = !!selected && !visiblePostIds.has(selected.id);
+    if (selected && hasExtraSelectedMarker) {
+      showPostPinMarker(selected, renderedModeRevision);
+      visiblePostIds.add(selected.id);
+    }
+    for (const [id, marker] of activePostPins) {
+      if (!visiblePostIds.has(id)) {
+        marker.remove();
+        activePostPins.delete(id);
+      }
+    }
+    for (const [id, marker] of clusterMarkers) {
+      if (!visibleClusterIds.has(id)) {
+        marker.remove();
+        clusterMarkers.delete(id);
       }
     }
   }
 
   function updatePins(snapshot) {
+    const geometryChanged = !clusterIndex || snapshot.pins.length !== postPinsById.size || snapshot.pins.some(pin => {
+      const previous = postPinsById.get(pin.id);
+      return previous?.latitude !== pin.latitude || previous?.longitude !== pin.longitude;
+    });
+    postPinsById.clear();
+    for (const pin of snapshot.pins) postPinsById.set(pin.id, pin);
+
+    if (!geometryChanged) {
+      // 距離だけが変わった場合は同じDOM要素を使い、進行中の色の補間を継続させる。
+      for (const [id, marker] of activePostPins) updatePostPinAppearance(postPinsById.get(id), marker);
+      return;
+    }
+
     const points = snapshot.pins.map(pin => ({
       type: 'Feature',
       properties: {
         cluster: false,
         id: pin.id,
-        nearby: pin.nearby,
-        withinRadius: pin.withinRadius,
-        isOwn: Boolean(pin.isOwn),
       },
       geometry: {
         type: 'Point',
@@ -415,18 +609,105 @@ export const openFreeMapDocument = `<!doctype html>
         maxZoom: ${POST_PIN_CLUSTER_MAX_ZOOM},
       });
     }
+    // 索引を作り直すと同じクラスタIDでも別の集合になり得るため、旧クラスタだけを破棄する。
+    clearClusterMarkers();
+    markerPrefetch = null;
     clusterIndex.load(points);
-    postPinCoordinates.clear();
-    for (const { properties, geometry } of points) {
-      postPinCoordinates.set(properties.id, geometry.coordinates);
-    }
     updateClusterMarkers();
   }
 
-  function recenterMap(bottomInset = 0) {
-    if (!current) return;
-    const inset = Math.min(Math.max(0, bottomInset), mapElement.clientHeight);
-    map.flyTo({ center: [current.longitude, current.latitude], zoom: 16, duration: 750, offset: [0, -inset / 2] });
+  function cancelTrackingCameraFrame() {
+    if (trackingCameraFrame === null) return;
+    cancelAnimationFrame(trackingCameraFrame);
+    trackingCameraFrame = null;
+  }
+
+  function setTrackingMode(mode) {
+    if (mode === trackingMode) return;
+    trackingMode = mode;
+    if (mode === 'free') cancelTrackingCameraFrame();
+    send({ type: 'location-tracking', mode });
+  }
+
+  function startPositionTracking(bearing = map.getBearing()) {
+    positionTrackingBearing = bearing;
+    setTrackingMode('position');
+  }
+
+  function releaseLocationCamera() {
+    if (trackingMode === 'free') return;
+    setTrackingMode('free');
+    // MapLibre がジェスチャーを処理中なら、その操作と慣性移動を止めない。
+    if (!userCameraMoving && mapTouchCount === 0) map.stop();
+  }
+
+  function moveTrackingCamera(zoom = map.getZoom()) {
+    if (!markerTarget || trackingMode === 'free' || userCameraMoving || mapTouchCount > 0) return;
+    const height = mapElement.clientHeight;
+    const inset = Math.min(Math.max(0, trackingBottomInset), height);
+    if (height - inset < 48) return;
+    const center = [markerTarget.longitude, markerTarget.latitude];
+    const previousBearing = map.getBearing();
+    const bearing = wrapLongitude(trackingMode === 'heading' ? headingAngle : positionTrackingBearing, previousBearing);
+    const { x, y } = map.project(center);
+    const angleDelta = Math.abs(bearing - previousBearing);
+    if (Math.abs(x - mapElement.clientWidth / 2) < 0.5 && Math.abs(y - (height - inset) / 2) < 0.5 &&
+        angleDelta < 0.25 && Math.abs(zoom - map.getZoom()) < 0.001 && !map.isMoving()) return;
+
+    map.easeTo({ center, bearing, zoom, offset: [0, -inset / 2], duration: ${LOCATION_CAMERA_DURATION_MS},
+      easeId: 'location-tracking' });
+  }
+
+  function scheduleTrackingCamera() {
+    if (trackingMode === 'free' || userCameraMoving || mapTouchCount > 0 || trackingCameraFrame !== null) return;
+    trackingCameraFrame = requestAnimationFrame(() => {
+      trackingCameraFrame = null;
+      moveTrackingCamera();
+    });
+  }
+
+  function cycleLocationTracking(bottomInset) {
+    if (!markerTarget || mapTouchCount > 0) return;
+    const wasFree = trackingMode === 'free';
+    if (trackingMode === 'position' && headingAngle === null) return;
+    trackingBottomInset = bottomInset;
+    postPinCenterSuppressed = true;
+    pendingPostPinCenter = null;
+    // 指を離した後の慣性移動は、ボタン操作で中断して現在地へ移動する。
+    if (userCameraMoving || map.isMoving()) {
+      userCameraMoving = false;
+      map.stop();
+    }
+    cancelTrackingCameraFrame();
+    if (trackingMode === 'position') setTrackingMode('heading');
+    else startPositionTracking();
+    moveTrackingCamera(wasFree ? Math.max(map.getZoom(), ${CURRENT_LOCATION_ZOOM}) : map.getZoom());
+  }
+
+  function updateTrackingTouches(event) {
+    mapTouchCount = event.originalEvent?.touches?.length ?? 0;
+    if (mapTouchCount === 0) scheduleTrackingCamera();
+  }
+
+  function bindLocationTrackingEvents() {
+    map.on('touchstart', updateTrackingTouches);
+    map.on('touchend', updateTrackingTouches);
+    map.on('touchcancel', updateTrackingTouches);
+    map.on('movestart', event => {
+      if (event.originalEvent) userCameraMoving = true;
+    });
+    map.on('drag', event => {
+      // ピンチ中は MapLibre が拡大と一緒に平行移動も報告する。
+      if (event.originalEvent && (event.originalEvent.touches?.length ?? 0) < 2) setTrackingMode('free');
+    });
+    map.on('rotatestart', event => {
+      if (event.originalEvent) setTrackingMode('free');
+    });
+    map.on('moveend', () => {
+      if (!userCameraMoving) return;
+      userCameraMoving = false;
+      scheduleTrackingCamera();
+    });
   }
 
   function updateBearing() {
@@ -440,6 +721,7 @@ export const openFreeMapDocument = `<!doctype html>
   }
 
   function updateHeading(degrees) {
+    const previous = headingAngle;
     if (degrees === null || headingAngle === null) {
       headingAngle = degrees;
     } else {
@@ -447,6 +729,10 @@ export const openFreeMapDocument = `<!doctype html>
       headingAngle += delta;
     }
     drawHeading();
+    if (trackingMode === 'heading' && headingAngle !== previous) {
+      if (headingAngle === null) startPositionTracking();
+      scheduleTrackingCamera();
+    }
   }
 
   function cancelPositionAnimation() {
@@ -468,6 +754,7 @@ export const openFreeMapDocument = `<!doctype html>
         longitude: start.longitude + longitudeDelta * eased,
       };
       currentMarker.setLngLat([displayedPosition.longitude, displayedPosition.latitude]);
+      drawDistanceLine();
       positionFrame = progress < 1 ? requestAnimationFrame(frame) : null;
     }
     positionFrame = requestAnimationFrame(frame);
@@ -477,6 +764,7 @@ export const openFreeMapDocument = `<!doctype html>
     current = point;
     if (current) {
       const target = displayPoint ?? { ...current, durationMs: 450 };
+      const targetChanged = markerTarget?.latitude !== target.latitude || markerTarget?.longitude !== target.longitude;
       if (!currentMarker) {
         const dot = document.createElement('div');
         dot.className = 'current-dot';
@@ -496,7 +784,7 @@ export const openFreeMapDocument = `<!doctype html>
         displayedPosition = target;
         updateBearing();
         drawHeading();
-      } else if (markerTarget.latitude !== target.latitude || markerTarget.longitude !== target.longitude) {
+      } else if (targetChanged) {
         if (target.durationMs > 0) {
           animatePosition(target);
         } else {
@@ -507,10 +795,12 @@ export const openFreeMapDocument = `<!doctype html>
       }
       markerTarget = target;
       if (!centered) {
-        recenterMap();
         centered = true;
+        map.flyTo({ center: [target.longitude, target.latitude], zoom: ${CURRENT_LOCATION_ZOOM}, duration: 750 });
       }
+      if (targetChanged) scheduleTrackingCamera();
     } else {
+      releaseLocationCamera();
       cancelPositionAnimation();
       displayedPosition = null;
       markerTarget = null;
@@ -525,7 +815,7 @@ export const openFreeMapDocument = `<!doctype html>
     if (snapshot.modeRevision !== pinModeRevision) {
       pinModeRevision = snapshot.modeRevision;
       clusterIndex = null;
-      postPinCoordinates.clear();
+      postPinsById.clear();
       selectPostPin(null);
       clearMarkers();
     }
@@ -539,19 +829,28 @@ export const openFreeMapDocument = `<!doctype html>
       appliedPinModeRevision = null;
       issue ||= 'pins';
     }
+    syncDistanceLine();
     return issue;
   }
 
   window.receiveKokoMapCommand = command => {
     if (!ready) return;
-    if (command?.type === 'recenter') {
+    if (command?.type === 'cycle-location-tracking') {
       if (!Number.isFinite(command.bottomInset)) return;
-      try { recenterMap(command.bottomInset); } catch { send({ type: 'recenter-failed' }); }
+      try { cycleLocationTracking(command.bottomInset); } catch { send({ type: 'recenter-failed' }); }
+      return;
+    }
+    if (command?.type === 'tracking-inset') {
+      if (trackingMode === 'free' || !Number.isFinite(command.bottomInset) || command.bottomInset === trackingBottomInset) return;
+      trackingBottomInset = command.bottomInset;
+      scheduleTrackingCamera();
       return;
     }
     if (command?.type === 'reset-bearing') {
-      if (map) {
-        try { map.easeTo({ bearing: 0, duration: 300 }); } catch {}
+      if (trackingMode === 'free') map.easeTo({ bearing: 0, duration: ${LOCATION_CAMERA_DURATION_MS} });
+      else {
+        startPositionTracking(0);
+        scheduleTrackingCamera();
       }
       return;
     }
@@ -609,16 +908,23 @@ export const openFreeMapDocument = `<!doctype html>
       map = new maplibregl.Map({
         container: mapElement, style,
         center: point ? [point.longitude, point.latitude] : [138, 36],
-        zoom: point ? 16 : 4.5,
+        zoom: point ? ${CURRENT_LOCATION_ZOOM} : 4.5,
         attributionControl: false, bearing: 0, dragRotate: true, pitchWithRotate: false, maxPitch: 0,
       });
       mapElement.insertBefore(mask, map.getCanvasContainer().nextSibling);
+      mapElement.insertBefore(distanceOverlay, mask.nextSibling);
       map.on('move', drawRange);
-      map.on('moveend', updateClusterMarkers);
+      map.on('move', drawDistanceLine);
+      map.on('move', scheduleMarkerViewportCheck);
+      map.on('moveend', refreshMarkerViewport);
       map.on('moveend', finishPostPinCenter);
+      bindLocationTrackingEvents();
       map.on('resize', () => {
         drawRange();
+        drawDistanceLine();
+        cancelMarkerViewportFrame();
         updateClusterMarkers();
+        scheduleTrackingCamera();
       });
       map.on('rotate', () => {
         send({ type: 'bearing-change', bearing: map.getBearing() });
@@ -629,6 +935,9 @@ export const openFreeMapDocument = `<!doctype html>
       map.once('remove', () => {
         viewportObserver.disconnect();
         cancelPositionAnimation();
+        cancelDistanceLineAnimation();
+        cancelMarkerViewportFrame();
+        cancelTrackingCameraFrame();
       });
       map.once('load', () => {
         ready = true;

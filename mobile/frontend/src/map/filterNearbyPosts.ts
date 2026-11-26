@@ -5,6 +5,10 @@ import type { SavedPost } from '../posts/postService';
 
 export const RADIUS_METERS = 250;
 
+export function isWithinPostRadius(distance: number): boolean {
+  return distance <= RADIUS_METERS + 1e-7;
+}
+
 // Haversine公式で2点間の距離（メートル）を計算する。
 // 地球を球体として近似するため、数十km以内の短距離では十分な精度がある。
 export function distanceMeters(
@@ -30,6 +34,6 @@ export function filterNearbyPosts(
 ): SavedPost[] {
   return posts.filter(post => {
     if (post.is_published !== true || post.latitude === null || post.longitude === null) return false;
-    return distanceMeters(currentLat, currentLon, post.latitude, post.longitude) <= RADIUS_METERS + 1e-7;
+    return isWithinPostRadius(distanceMeters(currentLat, currentLon, post.latitude, post.longitude));
   });
 }

@@ -1,10 +1,54 @@
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 const test = require('node:test');
+const { runInNewContext } = require('node:vm');
+const ts = require('typescript');
 
 const { nextTutorialPage, tutorialPages, tutorialSwipeDirection } = require('../src/tutorial/tutorialPages.ts');
 const {
   rememberTutorialCompletion, shouldShowTutorial, tutorialCompletionKey,
 } = require('../src/tutorial/tutorialCompletion.ts');
+
+test('the app confirms successful registration before opening the tutorial, and normal login goes straight home', () => {
+  const auth = {
+    mode: 'register', email: 'account@example.com', session: null,
+    continueAfterRegistration: () => { auth.session.completionAcknowledged = true; },
+  };
+  const modules = {
+    './src/auth/screens/LoginScreen': { LoginScreen: 'LoginScreen' },
+    './src/auth/screens/RegisterScreen': {
+      RegisterScreen: 'RegisterScreen', RegistrationCompleteScreen: 'RegistrationCompleteScreen',
+    },
+    './src/auth/useAuth': { useAuth: () => auth },
+    './src/home/screens/HomeScreen': { HomeScreen: 'HomeScreen' },
+    './src/tutorial/TutorialEntry': { TutorialEntry: 'TutorialEntry' },
+    './src/tutorial/tutorialCompletion': { tutorialCompletionKey },
+  };
+  const source = readFileSync(join(__dirname, '../App.tsx'), 'utf8');
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+  });
+  const app = {};
+  runInNewContext(outputText, { exports: app, require: name => modules[name] ?? require(name) });
+
+  assert.equal(app.default().type, 'RegisterScreen');
+
+  auth.mode = 'login'; // 認証コードで登録が完了すると、認証フックで画面モードもログインに戻る。
+  auth.session = { token: 'test-token', source: 'registration', completionAcknowledged: false };
+  const confirmation = app.default();
+  assert.equal(confirmation.type, 'RegistrationCompleteScreen');
+  confirmation.props.onContinue();
+
+  const entry = app.default();
+  assert.equal(entry.type, 'TutorialEntry');
+  assert.equal(entry.props.children.type, 'HomeScreen');
+
+  auth.session = { token: 'next-token', source: 'login' };
+  const home = app.default();
+  assert.equal(home.type, 'HomeScreen');
+  assert.equal(home.props.token, 'next-token');
+});
 
 test('the six tutorial pages appear in the intended order and navigation stays within their bounds', () => {
   assert.deepEqual(tutorialPages.map(page => page.title), [

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Linking, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Linking, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path, Polygon } from 'react-native-svg';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent, WebViewProps } from 'react-native-webview';
@@ -7,7 +7,7 @@ import type { WebViewMessageEvent, WebViewProps } from 'react-native-webview';
 import type { DisplayPosition } from '../../location/displayPosition';
 import type { LocationState } from '../../location/useCurrentLocation';
 import type { PostPin } from '../../posts/postService';
-import { distanceMeters, RADIUS_METERS } from '../filterNearbyPosts';
+import { distanceMeters, isWithinPostRadius } from '../filterNearbyPosts';
 import { createOpenFreeMapDocument } from '../openFreeMapDocument';
 import type { MapPoint, MapSnapshot } from '../openFreeMapDocument';
 import { resolvePostPinTap } from '../postPins';
@@ -21,6 +21,7 @@ const overlayMessages = {
 } as const;
 
 type OverlayIssue = keyof typeof overlayMessages;
+type LocationTrackingMode = 'free' | 'position' | 'heading';
 
 function readOverlayIssue(issue: unknown): OverlayIssue | null {
   return issue === 'position' || issue === 'range' || issue === 'pins' ? issue : null;
@@ -32,11 +33,73 @@ function makeMapDocument(snapshot: MapSnapshot, json: string, heading: number | 
 const INITIAL_HEADING_WAIT_MS = 1000;
 const POSITION_NOTICE_DISTANCE_METERS = 25;
 const POSITION_NOTICE_DELAY_MS = 12000;
+const LOCATION_ICON_COLOR = '#292B28';
 const mapCredits = [
   { label: 'OpenFreeMap', url: 'https://openfreemap.org/' },
   { label: '© OpenMapTiles', url: 'https://www.openmaptiles.org/' },
   { label: '© OpenStreetMap', url: 'https://www.openstreetmap.org/copyright' },
 ];
+
+function LocationTrackingIcon({ mode }: { mode: LocationTrackingMode }) {
+  const [visibleMode, setVisibleMode] = useState(mode);
+  const visibility = useRef(new Animated.Value(1)).current;
+  const [reduceMotion, setReduceMotion] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    let changed = false;
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', enabled => {
+      changed = true;
+      setReduceMotion(enabled);
+    });
+    void AccessibilityInfo.isReduceMotionEnabled().then(enabled => {
+      if (active && !changed) setReduceMotion(enabled);
+    }, () => {});
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const isRevealing = visibleMode === mode;
+    if (reduceMotion || (!isRevealing && visibleMode !== 'heading' && mode !== 'heading')) {
+      visibility.setValue(1);
+      if (!isRevealing) setVisibleMode(mode);
+      return;
+    }
+
+    // 縮みきってから図形を切り替え、次の描画で同じ中心から広げる。
+    let active = true;
+    const animation = Animated.timing(visibility, {
+      toValue: isRevealing ? 1 : 0,
+      duration: isRevealing ? 330 : 270,
+      easing: isRevealing ? Easing.out(Easing.quad) : Easing.in(Easing.quad),
+      useNativeDriver: true, isInteraction: false,
+    });
+    animation.start(({ finished }) => {
+      if (active && finished && !isRevealing) setVisibleMode(mode);
+    });
+    return () => {
+      active = false;
+      animation.stop();
+    };
+  }, [mode, reduceMotion, visibility, visibleMode]);
+
+  const isHeading = visibleMode === 'heading';
+  return (
+    <Animated.View pointerEvents="none"
+      style={[styles.iconContainer, { opacity: visibility, transform: [{ scale: visibility }] }]}>
+      <Svg width={24} height={24} viewBox="0 0 24 24" stroke={LOCATION_ICON_COLOR}
+        strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        {isHeading && <Path d="M12 2.5v1.5" fill="none" />}
+        <Path d={isHeading ? 'M12 7 19 21.5 12 17.5 5 21.5Z'
+          : 'M19.601 4.399 14.298 19.601 12.177 11.823 4.399 9.702Z'}
+          fill={LOCATION_ICON_COLOR} fillOpacity={visibleMode === 'free' ? 0 : 1} />
+      </Svg>
+    </Animated.View>
+  );
+}
 
 export function HomeMap({
   postPins, modeRevision, nearbyPostIds, selectedPin, location, displayPosition, heading, controlsInset, onSelectPin, onOpenSettings,
@@ -62,6 +125,7 @@ export function HomeMap({
   }), [compassRotation]);
 
   const latestControlsInset = useRef(0);
+  const [trackingMode, setTrackingMode] = useState<LocationTrackingMode>('free');
   const [mapState, setMapState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [overlayIssue, setOverlayIssue] = useState<OverlayIssue | null>(null);
   const [appliedPoint, setAppliedPoint] = useState<MapPoint | null>(null);
@@ -91,9 +155,9 @@ export function HomeMap({
     modeRevision,
     pins: pins.map(pin => ({
       ...pin,
-      // 非公開の自分の投稿も、閲覧可否とは独立して地図上の見た目を決める。
-      withinRadius: pin.nearby || (pin.isOwn === true && latitude !== null && longitude !== null &&
-        distanceMeters(latitude, longitude, pin.latitude, pin.longitude) <= RADIUS_METERS + 1e-7),
+      // 配色と破線は、サーバーから一覧が届く前でも現在の距離に追従させる。
+      withinRadius: latitude !== null && longitude !== null &&
+        isWithinPostRadius(distanceMeters(latitude, longitude, pin.latitude, pin.longitude)),
     })),
   }), [latitude, longitude, displayPosition, modeRevision, pins]);
   const snapshotJson = JSON.stringify(snapshot);
@@ -156,9 +220,22 @@ export function HomeMap({
   }, [mapState, webViewLoaded, heading]);
 
   useEffect(() => {
-    const listener = controlsInset.addListener(({ value }) => { latestControlsInset.current = value; });
-    return () => controlsInset.removeListener(listener);
-  }, [controlsInset]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const listener = controlsInset.addListener(({ value }) => {
+      latestControlsInset.current = value;
+      if (trackingMode === 'free') return;
+      // シートが動くたびに地図のアニメーションを始め直さず、高さが落ち着いてから中央を合わせる。
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const command = JSON.stringify({ type: 'tracking-inset', bottomInset: latestControlsInset.current });
+        webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${command}); true;`);
+      }, 100);
+    });
+    return () => {
+      clearTimeout(timer);
+      controlsInset.removeListener(listener);
+    };
+  }, [controlsInset, trackingMode]);
 
   useEffect(() => {
     if (mapState !== 'ready' || !pinModeApplied) return;
@@ -176,8 +253,8 @@ export function HomeMap({
     return () => clearTimeout(timer);
   }, [mapState, modeRevision, pinModeApplied, selectedPin]);
 
-  const recenter = () => {
-    const command = JSON.stringify({ type: 'recenter', bottomInset: latestControlsInset.current });
+  const cycleLocationTracking = () => {
+    const command = JSON.stringify({ type: 'cycle-location-tracking', bottomInset: latestControlsInset.current });
     webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${command}); true;`);
   };
 
@@ -190,6 +267,8 @@ export function HomeMap({
     pending.current = null;
     appliedJson.current = null;
     setAppliedModeRevision(null);
+    setTrackingMode('free');
+    compassRotation.setValue(0);
     setMapState('loading');
     setOverlayIssue(null);
     setAppliedPoint(null);
@@ -197,7 +276,7 @@ export function HomeMap({
     setWebViewLoaded(false);
     setDocument(makeMapDocument(snapshot, snapshotJson, heading));
     setReloadKey(key => key + 1);
-  }, [snapshot, snapshotJson, heading]);
+  }, [compassRotation, snapshot, snapshotJson, heading]);
 
   useEffect(() => {
     if (mapState !== 'loading' || !document) return;
@@ -207,7 +286,8 @@ export function HomeMap({
 
   const onMapMessage = ({ nativeEvent }: WebViewMessageEvent) => {
     if (nativeEvent.data.length > 1024) return;
-    let message: { type?: unknown; id?: unknown; issue?: unknown; requestId?: unknown; bearing?: unknown; modeRevision?: unknown } | null;
+    let message: { type?: unknown; id?: unknown; issue?: unknown; requestId?: unknown;
+      bearing?: unknown; modeRevision?: unknown; mode?: unknown } | null;
     try {
       message = JSON.parse(nativeEvent.data);
     } catch {
@@ -215,16 +295,19 @@ export function HomeMap({
     }
     if (!message || typeof message !== 'object') return;
 
-    if (message.type === 'bearing-change' && typeof message.bearing === 'number') {
-      Animated.timing(compassRotation, {
-        toValue: -message.bearing,
-        duration: 50,
-        useNativeDriver: true,
-      }).start();
+    if (message.type === 'bearing-change' && typeof message.bearing === 'number' && Number.isFinite(message.bearing)) {
+      // 地図側で補間済みの角度を使い、±180度の境界でコンパスが一周するのを防ぐ。
+      compassRotation.setValue(-message.bearing);
       return;
     }
 
-    if (message.type === 'ready') {
+    if (message.type === 'location-tracking') {
+      // 開発中の更新で再利用された地図からは、以前の状態名が届くことがある。
+      const mode = message.mode === 'north' ? 'position' : message.mode;
+      if (mode === 'free' || mode === 'position' || mode === 'heading') {
+        setTrackingMode(mode);
+      }
+    } else if (message.type === 'ready') {
       const issue = readOverlayIssue(message.issue);
       appliedJson.current = issue === null ? document?.json ?? null : null;
       setAppliedModeRevision(message.modeRevision === modeRevision ? modeRevision : null);
@@ -254,7 +337,7 @@ export function HomeMap({
           previous?.latitude === next?.latitude && previous?.longitude === next?.longitude ? previous : next);
       }
     } else if (message.type === 'pin' && pinModeApplied) {
-      const selection = resolvePostPinTap(pins, message.id, message.modeRevision, modeRevision, coordinates);
+      const selection = resolvePostPinTap(postPins, message.id, message.modeRevision, modeRevision);
       if (selection) onSelectPin(selection, modeRevision);
     }
   };
@@ -265,6 +348,11 @@ export function HomeMap({
     : location.status === 'error' ? '現在地を取得できませんでした。'
     : '';
   const positionNotice = positionNeedsUpdate && showPositionNotice;
+  const locationButtonLabel = trackingMode === 'heading' ? '現在地を方角に合わせて追従中'
+    : trackingMode === 'position' ? '現在地を追従中' : '現在地に戻る';
+  const locationButtonHint = trackingMode === 'heading' ? '地図の向きを保つ現在地追従に切り替えます'
+    : trackingMode === 'position' ? (heading === null ? '端末の方角を取得できません' : '方角追従に切り替えます')
+    : '地図の向きを保ったまま、現在地へ移動します';
   const canRetryMap = mapState === 'error' || overlayIssue !== null || positionNotice;
   const notice = !document ? '地図の表示を準備中…'
     : mapState === 'error' ? '地図を読み込めませんでした。'
@@ -295,15 +383,14 @@ export function HomeMap({
       />}
       <Animated.View pointerEvents="box-none" style={[styles.controls, { bottom: controlsInset }]}>
         {mapState === 'ready' && (
-          <Text style={styles.credits}>
-            {mapCredits.map(({ label, url }, index) => (
-              <Text key={url}>
-                {index > 0 ? ' · ' : ''}
-                <Text accessibilityRole="link" style={styles.creditLink}
+          <View pointerEvents="box-none" style={styles.creditArea}>
+            <View pointerEvents="box-none" style={styles.credits}>
+              {mapCredits.map(({ label, url }) => (
+                <Text key={url} accessibilityRole="link" style={styles.creditLink}
                   onPress={() => { void Linking.openURL(url).catch(() => {}); }}>{label}</Text>
-              </Text>
-            ))}
-          </Text>
+              ))}
+            </View>
+          </View>
         )}
         <View style={styles.mapButtons}>
           <Pressable accessibilityRole="button" accessibilityLabel="設定を開く" style={styles.mapButton}
@@ -329,21 +416,11 @@ export function HomeMap({
             </Pressable>
           )}
 
-          {/* 1枚目の画像：現在位置に戻る（黒枠のナビゲーション矢印）ボタン */}
           {mapState === 'ready' && appliedPoint && coordinates && (
-            <Pressable accessibilityRole="button" accessibilityLabel="現在地に戻る"
-              style={styles.mapButton} onPress={recenter}>
-              <View style={styles.iconContainer}>
-                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                  <Path
-                    d="M21 3L3 10.53V11.51L9.84 14.16L12.48 21H13.46L21 3Z"
-                    stroke={uiColors.text}
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </Svg>
-              </View>
+            <Pressable accessibilityRole="button" accessibilityLabel={locationButtonLabel}
+              accessibilityHint={locationButtonHint} accessibilityState={{ selected: trackingMode !== 'free' }}
+              style={styles.mapButton} onPress={cycleLocationTracking}>
+              <LocationTrackingIcon mode={trackingMode} />
             </Pressable>
           )}
         </View>
@@ -369,10 +446,11 @@ export function HomeMap({
 const styles = StyleSheet.create({
   mapArea: { overflow: 'hidden' },
   controls: { position: 'absolute', left: 8, right: 12, paddingBottom: 8,
-    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 },
-  credits: { flexShrink: 1, backgroundColor: '#FFFFFFCC', borderRadius: 4,
-    paddingVertical: 3, paddingHorizontal: 5, color: uiColors.text, fontSize: 10 },
-  creditLink: { textDecorationLine: 'underline' },
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 6 },
+  creditArea: { flex: 1, minWidth: 0, alignItems: 'flex-start' },
+  credits: { flexDirection: 'row', flexWrap: 'wrap', maxWidth: '100%', columnGap: 3,
+    backgroundColor: '#FFFFFFCC', borderRadius: 4, paddingVertical: 2, paddingHorizontal: 3 },
+  creditLink: { flexShrink: 1, color: uiColors.text, fontSize: 10, textDecorationLine: 'underline' },
   iconContainer: {
     width: 26,
     height: 26,

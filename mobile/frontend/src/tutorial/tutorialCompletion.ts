@@ -12,7 +12,7 @@ export async function shouldShowTutorial(storage: Pick<TutorialStorage, 'getItem
   try {
     return (await storage.getItem(key)) !== 'complete';
   } catch {
-    // 端末内の保存を読み出せない場合も、ログイン後はホームを使えるようにする。
+    // 端末内の保存を読み出せない場合も、登録完了後はホームを使えるようにする。
     return false;
   }
 }
@@ -21,6 +21,6 @@ export async function rememberTutorialCompletion(storage: Pick<TutorialStorage, 
   try {
     await storage.setItem(key, 'complete');
   } catch {
-    // 保存できなくてもホームに進む。未保存の場合は、次回のログインで再表示され得る。
+    // 保存できなくてもホームに進む。
   }
 }

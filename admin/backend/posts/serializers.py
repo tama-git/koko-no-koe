@@ -70,6 +70,11 @@ class PostPlaceSearchSerializer(serializers.Serializer):
     q = serializers.CharField(max_length=100, allow_blank=True, default='')
 
 
+class PostPlacePreviewSerializer(serializers.Serializer):
+    latitude = serializers.DecimalField(max_digits=10, decimal_places=7, min_value=-90, max_value=90)
+    longitude = serializers.DecimalField(max_digits=10, decimal_places=7, min_value=-180, max_value=180)
+
+
 class PostPlaceTagSerializer(serializers.Serializer):
     place_id = serializers.JSONField(allow_null=True)
 

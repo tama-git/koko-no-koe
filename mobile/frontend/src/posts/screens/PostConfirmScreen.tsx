@@ -1,24 +1,70 @@
 import React, { useRef, useState } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, ScrollView } from 'react-native';
-import { createPost } from '../postService'; // バックエンドにデータを送信するAPI関数
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Svg, { Circle, Ellipse, Path, Rect } from 'react-native-svg';
+
+import { createPost } from '../postService';
+import type { PostPlaceDisplay } from '../postService';
+import { PostPlaceCredits } from '../components/PostPlaceCredits';
 import { uiColors } from '../../shared/uiColors';
 
-/** 
- * 入力画面から渡されたデータ（メッセージ・写真・位置情報・公開設定）を確認し、最終送信を行う画面 
- */
-export function PostConfirmScreen({ route, navigation, token, onCreated }: { route: any; navigation: any; token: string; onCreated: () => void }) {
-  // 入力画面（PostCreateScreen）から navigation.navigate で渡されたパラメータを受け取る
-  const { message, imageUri, latitude, longitude, isPublished, imageMimeType, imageFileName } = route.params;
+export type PostConfirmDraft = {
+  message: string;
+  imageUri: string | null;
+  imageAspectRatio?: number;
+  latitude: number;
+  longitude: number;
+  isPublished: boolean;
+  imageMimeType?: string;
+  imageFileName?: string;
+  placePreview?: PostPlaceDisplay | null;
+};
+
+type Props = {
+  route: { params: PostConfirmDraft };
+  navigation: { goBack: () => void; navigate: (screen: 'PostDetail', params: { postId: number }) => void };
+  token: string;
+  onCreated: () => void;
+};
+
+function ConfirmPhoto({ uri, initialAspectRatio }: { uri: string; initialAspectRatio?: number }) {
+  const [availableWidth, setAvailableWidth] = useState(0);
+  const [aspectRatio, setAspectRatio] = useState(
+    initialAspectRatio && Number.isFinite(initialAspectRatio) && initialAspectRatio > 0 ? initialAspectRatio : 4 / 3,
+  );
+  const maxHeight = 320;
+  const width = Math.min(availableWidth, maxHeight * aspectRatio);
+
+  return (
+    <View style={styles.photoFrame} onLayout={event => setAvailableWidth(event.nativeEvent.layout.width)}>
+      {width > 0 && (
+        <Image
+          source={{ uri }}
+          accessibilityLabel="投稿する写真"
+          style={[styles.previewImage, { width, height: width / aspectRatio }]}
+          resizeMode="contain"
+          onLoad={({ nativeEvent: { source: { width, height } } }) => {
+            const ratio = width / height;
+            if (Number.isFinite(ratio) && ratio > 0) setAspectRatio(ratio);
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+export function PostConfirmScreen({ route, navigation, token, onCreated }: Props) {
+  const { message, imageUri, imageAspectRatio, latitude, longitude, isPublished, imageMimeType, imageFileName, placePreview } = route.params;
   const hasPostLocation = Number.isFinite(latitude) && Math.abs(latitude) <= 90 &&
     Number.isFinite(longitude) && Math.abs(longitude) <= 180;
+  const loadingPlace = hasPostLocation && placePreview === undefined;
+  const locationLabel = hasPostLocation
+    ? loadingPlace ? '投稿場所を取得中…' : placePreview?.label ?? 'この付近'
+    : '入力画面に戻り、投稿位置を取得してください。';
   const busy = useRef(false);
   const [loading, setLoading] = useState(false); // 送信中の通信状態管理
 
-  /**
-   * 「この内容で投稿する」ボタンが押されたときの最終送信処理
-   */
   const handleFinalSubmit = async () => {
-    if (busy.current || !hasPostLocation) return;
+    if (busy.current || !hasPostLocation || loadingPlace) return;
     busy.current = true;
     try {
       setLoading(true); // 送信中フラグをON
@@ -52,57 +98,76 @@ export function PostConfirmScreen({ route, navigation, token, onCreated }: { rou
     }
   };
 
+  const cannotSubmit = loading || !hasPostLocation || loadingPlace;
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.content}>
-        
-        {/* 画面タイトル */}
-        <Text style={styles.title}>投稿内容の確認</Text>
-        {/* 確認用のカード型レイアウト */}
-        <View style={styles.card}>
-          <Text style={styles.label}>【メッセージ】</Text>
-          <Text style={styles.value}>{message ? message : '（メッセージなし）'}</Text>
-
-          <Text style={styles.label}>【写真】</Text>
-          {imageUri ? (
-            <Image source={{ uri: imageUri }} style={styles.previewImage} />
-          ) : (
-            <Text style={styles.value}>（写真なし）</Text>
-          )}
-
-          <Text style={styles.label}>【位置情報】</Text>
-          <Text style={styles.value}>
-            {hasPostLocation ? `緯度: ${latitude.toFixed(4)} / 経度: ${longitude.toFixed(4)}`
-              : '入力画面に戻り、投稿位置を取得してください。'}
-          </Text>
-
-          <Text style={styles.label}>【公開設定】</Text>
-          <Text style={styles.value}>{isPublished ? '公開' : '本人のみ公開'}</Text>
-        </View>
-
-        <Text style={styles.locationNotice}>地名を表示するため、投稿時に投稿地点の緯度・経度をGeoapifyに送信します。本人のみ公開の場合も対象です。</Text>
-
-        {/* 最終送信ボタン */}
-        <TouchableOpacity 
-          style={[styles.button, (loading || !hasPostLocation) && styles.buttonDisabled]}
-          onPress={handleFinalSubmit}
-          activeOpacity={0.8}
-          disabled={loading || !hasPostLocation}
-        >
-          <Text style={styles.buttonText}>{loading ? '送信中...' : 'この内容で投稿する'}</Text>
-        </TouchableOpacity>
-
-        {/* 入力画面に戻るための修正ボタン */}
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => navigation.goBack()}
-          disabled={loading}
-        >
-          <Text style={styles.backButtonText}>入力画面に戻って修正する</Text>
-        </TouchableOpacity>
-
+    <View style={styles.screen}>
+      <View style={styles.header}>
+        <Pressable accessibilityRole="button" accessibilityLabel="入力画面に戻る" disabled={loading}
+          onPress={navigation.goBack} style={styles.headerBack}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" accessible={false}
+            fill="none" stroke={uiColors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="m15 18-6-6 6-6" />
+          </Svg>
+        </Pressable>
+        <Text accessibilityRole="header" style={styles.headerTitle}>投稿内容の確認</Text>
+        <View style={styles.headerSpacer} />
       </View>
-    </ScrollView>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
+        <View style={styles.content}>
+          <View style={styles.intro}>
+            <Text accessibilityRole="header" style={styles.title}>この声を残しますか？</Text>
+            <Text style={styles.description}>投稿する前に内容を確認しましょう。</Text>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.locationRow}>
+              <Svg width={14} height={14} viewBox="0 0 24 24" accessible={false} style={styles.locationPin}
+                fill="none" stroke={uiColors.primary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+                <Circle cx={12} cy={10} r={2.5} />
+              </Svg>
+              <Text accessibilityLiveRegion="polite" style={styles.locationText}>{locationLabel}</Text>
+            </View>
+            {placePreview?.attribution && <PostPlaceCredits sources={[placePreview.attribution]} compact />}
+            {imageUri && <ConfirmPhoto key={imageUri} uri={imageUri} initialAspectRatio={imageAspectRatio} />}
+            {message.trim() !== '' && <Text style={styles.message}>{message}</Text>}
+          </View>
+
+          <View style={[styles.card, styles.visibilityCard]}>
+            <Svg width={20} height={20} viewBox="0 0 24 24" accessible={false} style={styles.visibilityIcon}
+              fill="none" stroke={uiColors.primary} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+              {isPublished ? <>
+                <Circle cx={12} cy={12} r={9} />
+                <Ellipse cx={12} cy={12} rx={4} ry={9} />
+                <Path d="M3 12h18" />
+              </> : <>
+                <Rect x={5} y={10} width={14} height={11} rx={2} />
+                <Path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" />
+              </>}
+            </Svg>
+            <View style={styles.visibilityText}>
+              <Text style={styles.visibilityTitle}>{isPublished ? '公開' : '自分のみ'}</Text>
+              <Text style={styles.description}>
+                {isPublished ? '投稿場所の250m以内で他の人が読めます。' : '自分だけが閲覧できます。'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.actions}>
+            <TouchableOpacity accessibilityRole="button"
+              style={[styles.button, cannotSubmit && styles.buttonDisabled]}
+              onPress={handleFinalSubmit} activeOpacity={0.8} disabled={cannotSubmit}>
+              <Text style={styles.buttonText}>{loading ? '送信中...' : 'この声を残す'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" style={styles.backButton}
+              onPress={navigation.goBack} disabled={loading}>
+              <Text style={styles.backButtonText}>内容を修正する</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -110,17 +175,35 @@ export function PostConfirmScreen({ route, navigation, token, onCreated }: { rou
  * 画面のスタイル定義
  */
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: uiColors.background },
-  content: { width: '100%', maxWidth: 440 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: uiColors.text },
-  card: { backgroundColor: uiColors.surface, borderRadius: 12, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: uiColors.border },
-  label: { fontSize: 13, fontWeight: '600', color: uiColors.primary, marginTop: 12, marginBottom: 4 },
-  value: { fontSize: 15, color: uiColors.text, lineHeight: 22 },
-  locationNotice: { fontSize: 13, color: uiColors.primary, lineHeight: 20, marginBottom: 12 },
-  previewImage: { width: '100%', height: 200, borderRadius: 8, marginTop: 4, resizeMode: 'contain' },
-  button: { height: 52, backgroundColor: uiColors.primaryFill, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  screen: { flex: 1, backgroundColor: uiColors.background },
+  header: { flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: 12,
+    borderBottomWidth: 1, borderBottomColor: uiColors.border },
+  headerBack: { minHeight: 44, width: 44, alignItems: 'center', justifyContent: 'center' },
+  headerSpacer: { width: 44 },
+  headerTitle: { flex: 1, paddingVertical: 8, fontSize: 17, fontWeight: '600', textAlign: 'center', color: uiColors.text },
+  scroll: { flex: 1 },
+  container: { paddingHorizontal: 16, paddingVertical: 24, alignItems: 'center' },
+  content: { width: '100%', maxWidth: 472, gap: 14 },
+  intro: { paddingHorizontal: 4, marginBottom: 4, gap: 6 },
+  title: { fontSize: 23, fontWeight: '700', color: uiColors.text },
+  description: { fontSize: 14, lineHeight: 21, color: uiColors.primary },
+  card: { backgroundColor: uiColors.surface, borderRadius: 12, padding: 14, gap: 12,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: uiColors.border },
+  locationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5 },
+  locationPin: { flexShrink: 0, marginTop: 2 },
+  locationText: { flex: 1, fontSize: 12, lineHeight: 18, color: uiColors.primary },
+  message: { fontSize: 16, lineHeight: 24, color: uiColors.text },
+  photoFrame: { width: '100%', alignItems: 'center' },
+  previewImage: { borderRadius: 10 },
+  visibilityCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  visibilityIcon: { flexShrink: 0, marginTop: 1 },
+  visibilityText: { flex: 1, gap: 3 },
+  visibilityTitle: { fontSize: 15, fontWeight: '600', color: uiColors.text },
+  actions: { gap: 6 },
+  button: { minHeight: 52, padding: 12, backgroundColor: uiColors.primaryFill, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center' },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: uiColors.onPrimary, fontSize: 15, fontWeight: '700' },
-  backButton: { height: 44, alignItems: 'center', justifyContent: 'center' },
-  backButtonText: { color: uiColors.primary, fontSize: 14, fontWeight: '600' },
+  buttonText: { color: uiColors.onPrimary, fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  backButton: { minHeight: 44, padding: 8, alignItems: 'center', justifyContent: 'center' },
+  backButtonText: { color: uiColors.primary, fontSize: 14, fontWeight: '600', textAlign: 'center' },
 });

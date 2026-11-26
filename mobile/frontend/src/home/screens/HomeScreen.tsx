@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentProps } from 'react';
 import { Animated, BackHandler, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -8,6 +8,7 @@ import { useCurrentLocation } from '../../location/useCurrentLocation';
 import { filterNearbyPosts } from '../../map/filterNearbyPosts';
 import { ownPostsToPins } from '../../map/postPins';
 import type { MapPinSelection } from '../../map/postPins';
+import { canOpenSelectedPost, getPostProximity } from '../../map/postProximity';
 import { PostBottomSheet } from '../components/PostBottomSheet';
 import { HomeMenuBar } from '../components/HomeMenuBar';
 import { PostComposerModal } from '../../posts/components/PostComposerModal';
@@ -27,6 +28,8 @@ type Props = {
   user: { name: string; email: string };
 };
 
+type PostVisit = { pin: MapPinSelection; phase: 'guide' | 'opening' | 'reading' };
+
 /** トップ画面担当の編集場所。ログアウトの処理は認証担当に渡す。 */
 export function HomeScreen({ token, busy, onLogout, user }: Props) {
   const [postMode, setPostMode] = useState<{ scope: PostListScope; revision: number }>({ scope: 'public', revision: 0 });
@@ -38,11 +41,13 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
   const sheetHeight = useRef(new Animated.Value(0)).current;
   const mapControlsInset = useMemo(() => Animated.add(sheetHeight, menuHeight), [sheetHeight, menuHeight]);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [selection, setSelection] = useState<MapPinSelection | null>(null);
+  const [selection, setSelection] = useState<PostVisit | null>(null);
   const [listOpenRequest, setListOpenRequest] = useState(0);
   const { location, displayPosition, heading, retryLocation } = useCurrentLocation();
   const viewerCoordinates = location.status === 'ready' ? location.coordinates : undefined;
-  const publicPosts = usePostList(token, 'public', refreshKey, viewerCoordinates);
+  const selectedPin = selection?.pin ?? null;
+  const monitorVisibility = selection?.phase === 'reading' && !selection.pin.own;
+  const publicPosts = usePostList(token, 'public', refreshKey, viewerCoordinates, monitorVisibility);
   const ownPosts = usePostList(token, 'own', refreshKey);
   const ownPins = useMemo(() => ownPostsToPins(ownPosts.posts), [ownPosts.posts]);
   const locationFailed = location.status !== 'loading' && location.status !== 'ready';
@@ -50,6 +55,28 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
     ? filterNearbyPosts(publicPosts.posts, location.coordinates.latitude, location.coordinates.longitude)
     : [], [location, publicPosts.posts]);
   const nearbyPostIds = useMemo(() => new Set(nearbyPosts.map(post => post.id)), [nearbyPosts]);
+  const proximity = selectedPin && getPostProximity(viewerCoordinates, selectedPin.point);
+  const withinRadius = proximity?.withinRadius === true;
+  const revoked = selectedPin !== null && !selectedPin.own && (
+    publicPosts.pinStatus === 'denied' ||
+    (publicPosts.pinStatus === 'verified' && !publicPosts.pins.some(pin => pin.id === selectedPin.id))
+  );
+  const readContext = useRef({ viewerCoordinates, nearbyPostIds, withinRadius, revoked, selectedPin });
+  useLayoutEffect(() => {
+    readContext.current = { viewerCoordinates, nearbyPostIds, withinRadius, revoked, selectedPin };
+    // 成功前に圏外へ出た場合は取得中の詳細を閉じる。次の到達時は本人がボタンを押して開く。
+    if (revoked) setSelection(current => current === selection ? null : current);
+    else if (selection?.phase === 'opening' && !selection.pin.own && !withinRadius) {
+      setSelection(current => current === selection ? { ...selection, phase: 'guide' } : current);
+    }
+  }, [selection, viewerCoordinates, nearbyPostIds, withinRadius, revoked, selectedPin]);
+
+  const beginVisit = useCallback((pin: MapPinSelection) => {
+    const current = readContext.current;
+    const inRange = getPostProximity(current.viewerCoordinates, pin.point)?.withinRadius === true;
+    const canOpen = canOpenSelectedPost(pin.own, inRange, current.nearbyPostIds.has(pin.id));
+    setSelection(previous => previous?.pin.id === pin.id ? previous : { pin, phase: canOpen ? 'opening' : 'guide' });
+  }, []);
   const nearbyList = {
     ...publicPosts,
     posts: nearbyPosts,
@@ -59,7 +86,11 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
   };
   const selectListPost = (id: number) => {
     if (activePostMode.current.revision !== modeRevision) return;
-    setSelection({ id, own: mode === 'own' || nearbyPosts.some(post => post.id === id && post.is_own === true) });
+    const post = (mode === 'own' ? ownPosts.posts : nearbyPosts).find(item => item.id === id);
+    if (!post) return;
+    const point = post.latitude === null || post.longitude === null
+      ? null : { latitude: post.latitude, longitude: post.longitude };
+    beginVisit({ id, own: mode === 'own' || post.is_own === true, point });
   };
   const selectMode = useCallback((nextMode: PostListScope) => {
     const current = activePostMode.current;
@@ -76,15 +107,15 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
   };
   const selectMapPin = useCallback((pinSelection: MapPinSelection, revision: number) => {
     // 切り替えボタンを押した直後は、Reactの再描画前に届いた旧ピンのイベントも破棄する。
-    if (activePostMode.current.revision === revision) setSelection(pinSelection);
-  }, []);
+    if (activePostMode.current.revision === revision) beginVisit(pinSelection);
+  }, [beginVisit]);
   const refreshPosts = () => setRefreshKey(value => value + 1);
   const closeDetail = () => setSelection(null);
   const finishPostChange = () => {
-    setSelection(current => current === selection ? null : current);
+    setSelection(current => current?.pin === selectedPin ? null : current);
     refreshPosts();
   };
-  const showingDetail = selection !== null;
+  const showingDetail = selection !== null && !revoked;
 
   useEffect(() => {
     if (!showingDetail) return;
@@ -95,25 +126,46 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
     return () => back.remove();
   }, [showingDetail]);
 
-  const detail: ComponentProps<typeof PostBottomSheet>['detail'] = !selection ? null : 'own' in selection ? {
-    id: selection.id,
+  const showPost = selection?.phase === 'reading' ||
+    (selection?.phase === 'opening' && (selection.pin.own || withinRadius));
+  const arrived = withinRadius && selectedPin !== null && nearbyPostIds.has(selectedPin.id) && !revoked;
+  const openArrivedPost = () => {
+    const current = readContext.current;
+    if (current.revoked || !current.withinRadius || !selectedPin || !current.nearbyPostIds.has(selectedPin.id)) return;
+    setSelection(visit => visit?.pin === selectedPin && visit.phase === 'guide' ? { ...visit, phase: 'opening' } : visit);
+  };
+  const detail: ComponentProps<typeof PostBottomSheet>['detail'] = !selection || revoked ? null : showPost ? {
+    id: selection.pin.id,
     renderPost: sheet => (
-      <PostDetailScreen key={selection.id} route={{ params: { postId: selection.id } }} token={token}
+      <PostDetailScreen key={selection.pin.id} route={{ params: { postId: selection.pin.id } }} token={token}
         navigation={{ goBack: closeDetail }} sheet={sheet} onHidden={finishPostChange}
-        onDeleted={selection.own ? finishPostChange : undefined}
-        onVisibilityChanged={selection.own ? refreshPosts : undefined}
+        viewerAccess={selection.pin.own ? undefined : {
+          getCoordinates: () => {
+            const current = readContext.current;
+            return current.selectedPin === selection.pin && !current.revoked && current.withinRadius
+              ? current.viewerCoordinates : undefined;
+          },
+          onOpened: () => setSelection(current =>
+            current === selection && current.phase === 'opening' ? { ...current, phase: 'reading' } : current),
+        }}
+        onDeleted={selection.pin.own ? finishPostChange : undefined}
+        onVisibilityChanged={selection.pin.own ? refreshPosts : undefined}
         onPlaceChanged={(postId, place) => {
           ownPosts.updatePlaceDisplay(postId, place);
           publicPosts.updatePlaceDisplay(postId, place);
         }} />
     ),
-  } : { id: selection.id, distanceNotice: <PostDistanceNotice distanceMeters={selection.distanceMeters} /> };
+  } : {
+    id: selection.pin.id,
+    distanceNotice: <PostDistanceNotice key={selection.pin.id} proximity={proximity} arrived={arrived}
+      onRead={openArrivedPost} />,
+  };
   return (
     <AppScreen edgeToEdge>
       <View style={styles.home}>
         {/* 地図を画面全体に置き、シートの高さは操作ボタンと出典の位置だけに使う。 */}
         <HomeMap postPins={mode === 'own' ? ownPins : publicPosts.pins} modeRevision={modeRevision} nearbyPostIds={nearbyPostIds}
-          selectedPin={selection}
+          selectedPin={revoked ? null : selectedPin}
           location={location} displayPosition={displayPosition} heading={heading} controlsInset={mapControlsInset}
           onSelectPin={selectMapPin} onOpenSettings={() => setOpenScreen('settings')} />
         <PostBottomSheet bottomInset={menuHeight} animatedHeight={sheetHeight} mode={mode} onSelectMode={selectMode}

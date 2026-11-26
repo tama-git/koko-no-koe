@@ -1,8 +1,6 @@
 import type { PostPin, SavedPost, ViewerCoordinates } from '../posts/postService';
-import { distanceMeters } from './filterNearbyPosts';
 
-export type SelectablePostPin = PostPin & { nearby: boolean };
-export type MapPinSelection = { id: number; own: boolean } | { id: number; distanceMeters: number | null };
+export type MapPinSelection = { id: number; own: boolean; point: ViewerCoordinates | null };
 
 /** 本人向けAPIで取得した投稿を、地図に必要な項目だけに変換する。 */
 export function ownPostsToPins(posts: readonly SavedPost[]): PostPin[] {
@@ -17,18 +15,14 @@ export function ownPostsToPins(posts: readonly SavedPost[]): PostPin[] {
 }
 
 export function resolvePostPinTap(
-  pins: readonly SelectablePostPin[], pinId: unknown, eventRevision: unknown, modeRevision: number,
-  coordinates: ViewerCoordinates | null,
+  pins: readonly PostPin[], pinId: unknown, eventRevision: unknown, modeRevision: number,
 ): MapPinSelection | null {
   if (eventRevision !== modeRevision || !Number.isSafeInteger(pinId)) return null;
   const pin = pins.find(item => item.id === pinId);
   if (!pin) return null;
-  if (pin.isOwn) return { id: pin.id, own: true };
-  if (coordinates && pin.nearby) return { id: pin.id, own: false };
   return {
     id: pin.id,
-    distanceMeters: coordinates
-      ? distanceMeters(coordinates.latitude, coordinates.longitude, pin.latitude, pin.longitude)
-      : null,
+    own: pin.isOwn === true,
+    point: { latitude: pin.latitude, longitude: pin.longitude },
   };
 }

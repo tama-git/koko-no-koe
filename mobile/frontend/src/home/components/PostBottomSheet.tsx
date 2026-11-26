@@ -29,6 +29,8 @@ const TAP_SLOP = 6;
 const SHEET_DIVIDER_HEIGHT = 1;
 const FULL_BACKGROUND_FADE_DISTANCE = 12;
 const SHEET_BACKGROUND_COLOR = uiColors.background;
+const SHEET_TOP_RADIUS = 20;
+const SHEET_SHADOW_HEIGHT = 24;
 
 type SheetDetail = { id: number } & (
   | { renderPost: (controls: PostDetailSheetControls) => ReactNode }
@@ -113,6 +115,14 @@ export function PostBottomSheet({
     outputRange: [0, 1],
     extrapolate: 'clamp',
   }), [animatedHeight, heights.full]);
+  const sheetShadowMotion = useMemo(() => ({
+    opacity: Animated.multiply(animatedHeight.interpolate({
+      inputRange: [0, 8],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    }), Animated.subtract(1, fullBackgroundOpacity)),
+    transform: [{ translateY: Animated.multiply(animatedHeight, -1) }],
+  }), [animatedHeight, fullBackgroundOpacity]);
 
   /**
    * ドラッグ中はシートが指に追従し、指を離すと最も近い段階に収まる。
@@ -230,6 +240,9 @@ export function PostBottomSheet({
         style={styles.sheetTrack}
         onLayout={event => setContainerHeight(event.nativeEvent.layout.height)}
       >
+        {/* 本体の外側で影を描画し、固定サイズのままシート上端に追従させる。 */}
+        <Animated.View pointerEvents="none" accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants" style={[styles.sheetShadow, sheetShadowMotion]} />
         <Animated.View style={[styles.sheet, { height: animatedHeight }]}
           pointerEvents={hiddenList ? 'none' : 'auto'} accessibilityElementsHidden={hiddenList}
           importantForAccessibility={hiddenList ? 'no-hide-descendants' : 'auto'}>
@@ -324,19 +337,25 @@ const styles = StyleSheet.create({
   sheetTrack: {
     flex: 1,
   },
+  sheetShadow: {
+    position: 'absolute',
+    bottom: -SHEET_SHADOW_HEIGHT,
+    left: 0,
+    right: 0,
+    height: SHEET_SHADOW_HEIGHT,
+    borderTopLeftRadius: SHEET_TOP_RADIUS,
+    borderTopRightRadius: SHEET_TOP_RADIUS,
+    boxShadow: [{ offsetX: 0, offsetY: -3, blurRadius: 8, color: 'rgba(0, 0, 0, 0.12)' }],
+  },
   sheet: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     backgroundColor: SHEET_BACKGROUND_COLOR,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: SHEET_TOP_RADIUS,
+    borderTopRightRadius: SHEET_TOP_RADIUS,
     overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#000000',
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
   },
   handleArea: {
     height: SHEET_HANDLE_HEIGHT,

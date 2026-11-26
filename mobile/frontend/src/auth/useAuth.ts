@@ -3,6 +3,10 @@ import { useRef, useState } from 'react';
 import { AuthErrors, AuthMode, validateAuth } from './validation';
 import * as api from './api';
 
+type AuthSession =
+  | { token: string; source: 'login' }
+  | { token: string; source: 'registration'; completionAcknowledged: boolean };
+
 /** 認証の状態と処理。画面の見た目は screens と components で管理する。 */
 export function useAuth() {
   const [mode, setMode] = useState<AuthMode>('login');
@@ -14,7 +18,7 @@ export function useAuth() {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<AuthErrors>({});
   const [message, setMessage] = useState('');
-  const [token, setToken] = useState<string | null>(null);
+  const [session, setSession] = useState<AuthSession | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const isRegister = mode === 'register';
@@ -57,7 +61,7 @@ export function useAuth() {
         setMessage('認証コードを送信しました。');
       } else {
         const newToken = await api.login(email, password);
-        setToken(newToken);
+        setSession({ token: newToken, source: 'login' });
       }
       setPassword('');
       setConfirmPassword('');
@@ -82,7 +86,7 @@ export function useAuth() {
         setMessage('新しい認証コードを送信しました。');
       } else {
         const newToken = await api.register(email, registrationId, code);
-        setToken(newToken);
+        setSession({ token: newToken, source: 'registration', completionAcknowledged: false });
         setRegistrationId(null);
         setCode('');
         setMode('login');
@@ -97,18 +101,24 @@ export function useAuth() {
     }
   }
 
+  function continueAfterRegistration() {
+    setSession(current => current?.source === 'registration' && !current.completionAcknowledged
+      ? { ...current, completionAcknowledged: true }
+      : current);
+  }
+
   async function handleLogout() {
-    if (!token || busyRef.current) return;
+    if (!session || busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     setMessage('');
     try {
-      await api.logout(token);
-      setToken(null);
+      await api.logout(session.token);
+      setSession(null);
       setMessage('ログアウトしました。');
     } catch (error) {
       if (error instanceof api.ApiError && error.status === 401) {
-        setToken(null);
+        setSession(null);
         setMessage('ログインの有効期限が切れました。');
       } else {
         setMessage(error instanceof Error ? error.message : 'ログアウトできませんでした。');
@@ -120,11 +130,11 @@ export function useAuth() {
   }
 
   return {
-    mode, email, password, confirmPassword, showPassword, errors, message, token, busy, isRegister,
+    mode, email, password, confirmPassword, showPassword, errors, message, session, busy, isRegister,
     isVerifyingRegistration: registrationId !== null, code, setCode,
     resendRegistrationCode: () => submitRegistrationCode(true),
     setEmail, setPassword, setConfirmPassword, setShowPassword, setErrors, setMessage,
-    changeMode, handleSubmit, handleLogout,
+    changeMode, handleSubmit, continueAfterRegistration, handleLogout,
   };
 }
 
