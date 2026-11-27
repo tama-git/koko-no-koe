@@ -1,19 +1,14 @@
-# 機能別TypeScript雛形
+# 機能別のTypeScript実装
 
-画面を表示する `.tsx` と別に、各機能の処理を書く `.ts` を用意しています。地図の位置情報・会員認証以外は未実装の雛形です。
+画面の入口と関連するAPIの一覧は [画面と機能の分担ガイド](../../../docs/04_画面と機能の分担ガイド.md) を参照してください。
 
-| 担当 | ファイル | 今後書く処理の例 |
+| 機能 | 主なファイル | 実装されている処理 |
 | --- | --- | --- |
-| 地図 | `map/mapService.ts` | 地図や投稿位置のデータを取得する処理 |
-| 投稿 | `posts/postService.ts` | 投稿の取得・登録など |
-| 通報 | `reports/reportService.ts` | 通報の送信 |
-| 自分の旅日記 | `journal/journalService.ts` | 自分の投稿の取得・絞り込み |
-| いいね | `likes/likeService.ts` | いいねした投稿の取得など |
-| 写真 | `camera/cameraService.ts` | カメラの許可・撮影 |
-| アカウント | `account/accountService.ts` | アカウント操作 |
-| 位置情報 | `location/getCurrentLocation.ts`、`useCurrentLocation.ts` | Phase 2で現在地の一度の取得・状態管理を実装済み。詳細は `location/README.md` |
-| 会員認証 | `auth/api.ts`、`auth/useAuth.ts` | 既存の登録・ログイン処理。重複作成しない |
-
-`Service` は処理をまとめるファイル名の例です。未実装の雛形の関数は呼び出すと「まだ実装されていません」とエラーになります。位置情報と会員認証は実装済みの処理があります。架空のデータを返したり、保存や送信が成功したように扱ったりしません。
-
-担当者は、必要な入力や戻り値、APIのURL、認証・権限、失敗時の画面表示をチームで確認してから、関数の引数・戻り値を決めて実装してください。今の引数なし・`Promise<never>` は未実装を示す仮の形で、正式な仕様ではありません。画面のつなぎ込みは `App.tsx` 担当者と調整します。
+| 地図 | `map/components/HomeMap.tsx`、`map/openFreeMapDocument.ts` | 投稿ピンの表示、現在地と方角への追従 |
+| 投稿・本人の投稿一覧 | `posts/postService.ts`、`posts/usePostList.ts` | 投稿の保存・取得と一覧の更新 |
+| 通報 | `reports/reportService.ts` | 入力の確認と通報の送信 |
+| リアクション | `likes/likeService.ts` | リアクションの取得・送信・取り消し |
+| 撮影 | `posts/screens/PostCreateScreen.tsx` | カメラの利用許可、撮影、撮り直し |
+| 会員向けの設定 | `utility/screens/UtilityScreen.tsx`、`utility/api.ts` | 設定項目の表示、パスワード変更、問い合わせ、退会 |
+| 位置情報 | `location/getCurrentLocation.ts`、`location/useCurrentLocation.ts` | 現在地の取得と、位置・方角の更新 |
+| 会員認証 | `auth/api.ts`、`auth/useAuth.ts` | 会員登録、メール認証、ログイン、ログアウト |

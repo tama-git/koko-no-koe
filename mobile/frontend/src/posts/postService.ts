@@ -38,6 +38,7 @@ export class PostApiError extends Error {
   constructor(message: string, status?: number) { super(message); this.status = status; }
 }
 
+// 設定されたDjangoのベースURLを確認し、投稿APIの接続先を組み立てる。
 function getApiUrl(): string {
   if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) throw new PostApiError('接続先が設定されていません。開発者に確認してください。');
   return `${baseUrl}/api/posts/`;
@@ -45,6 +46,7 @@ function getApiUrl(): string {
 
 export type ViewerCoordinates = Pick<Coordinates, 'latitude' | 'longitude'>;
 
+// 会員の認証情報と、必要な場合は閲覧時の座標をHTTPヘッダーに設定する。
 function readHeaders(token: string, coordinates?: ViewerCoordinates): Record<string, string> {
   if (!token) throw new PostApiError('ログインし直してください。', 401);
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
@@ -55,6 +57,7 @@ function readHeaders(token: string, coordinates?: ViewerCoordinates): Record<str
   return headers;
 }
 
+// APIから受け取ったエラー情報から、画面に出す文言を探す。
 function errorMessage(value: unknown): string | null {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) return errorMessage(value[0]);
@@ -74,6 +77,7 @@ const unconfirmedResult = {
   DELETE: '削除結果を確認できませんでした。一覧を更新するか、もう一度お試しください。',
 };
 
+// 投稿APIを呼び、時間切れ・HTTPエラー・応答形式の違いを処理する。
 async function request(path: string, token: string, options: {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: FormData | string;
@@ -124,10 +128,12 @@ async function request(path: string, token: string, options: {
   } finally { clearTimeout(timer); }
 }
 
+// 保存済みの座標が空欄または指定範囲内の数値かを確認する。
 function isSavedCoordinate(value: unknown, limit: number): boolean {
   return value === null || (typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= limit);
 }
 
+// サーバーの投稿データを検証し、画面で使う形式に整える。
 function parsePost(value: unknown): SavedPost {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new PostApiError('投稿データを確認できませんでした。');
   const p = value as Record<string, unknown>;
@@ -148,16 +154,19 @@ function parsePost(value: unknown): SavedPost {
   return post;
 }
 
+// 一覧APIの応答を検証し、投稿ごとに表示用データへ変換する。
 async function loadPostList(path: string, token: string): Promise<SavedPost[]> {
   const data = await request(path, token);
   if (!Array.isArray(data)) throw new PostApiError('投稿一覧を確認できませんでした。');
   return data.map(parsePost);
 }
 
+// ログイン中の会員が作成した投稿一覧を取得する。
 export function loadPosts(token: string): Promise<SavedPost[]> {
   return loadPostList('', token);
 }
 
+// 地図で使う公開ピンと、現在地から閲覧できる投稿一覧を取得する。
 export async function loadPublicPosts(token: string, viewerCoordinates?: ViewerCoordinates): Promise<PublicPosts> {
   const data = await request('public/', token, { viewerCoordinates, revalidate: true }) as Partial<PublicPosts> | null;
   if (!data || !Array.isArray(data.pins) || !Array.isArray(data.posts)) {
@@ -189,10 +198,12 @@ export type NewPost = {
   is_published: boolean;
 };
 
+// 投稿地点の緯度と経度を送信用に整える。
 function formatPostCoordinates({ latitude, longitude }: Pick<NewPost, 'latitude' | 'longitude'>) {
   return { latitude: latitude.toFixed(7), longitude: longitude.toFixed(7) };
 }
 
+// 入力した本文・座標・公開範囲と写真をDjangoへ送り、新規投稿を登録する。
 export async function createPost(postData: NewPost, token: string): Promise<SavedPost> {
   if (!postData.message?.trim() && !postData.image) throw new PostApiError('メッセージまたは写真を入力してください。');
   
@@ -221,20 +232,24 @@ export async function createPost(postData: NewPost, token: string): Promise<Save
   catch { throw new PostApiError('送信結果を確認できませんでした。再送する前に、自分の投稿一覧を確認してください。'); }
 }
 
+// 投稿IDを確認して、対象投稿のAPIパスを組み立てる。
 function postPath(postId: number): string {
   if (!Number.isInteger(postId) || postId <= 0) throw new PostApiError('投稿IDを確認してください。');
   return `${postId}/`;
 }
 
+// API応答の値から、項目を読み取れるオブジェクトかを判定する。
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+// 出典名とリンクの形式を確認して表示用の出典を作る。
 function parsePlaceAttribution(value: unknown): PostPlaceAttribution | null {
   if (!isRecord(value) || typeof value.label !== 'string' || !value.label.trim()) return null;
   return { label: value.label, url: typeof value.url === 'string' && value.url.startsWith('https://') ? value.url : null };
 }
 
+// 手動で設定した施設のID・名称・出典を検証する。
 function parseManualPlace(value: unknown): ManualPostPlace | null {
   if (!isRecord(value) || typeof value.place_id !== 'string' || !value.place_id.trim() ||
       typeof value.name !== 'string' || !value.name.trim()) return null;
@@ -242,6 +257,7 @@ function parseManualPlace(value: unknown): ManualPostPlace | null {
   return attribution ? { place_id: value.place_id, name: value.name, attribution } : null;
 }
 
+// 地名または施設名を、投稿カードと詳細で使う表示形式に変換する。
 function parsePlaceDisplay(value: unknown): PostPlaceDisplay | undefined {
   if (!isRecord(value) || (value.mode !== 'auto' && value.mode !== 'manual') ||
       typeof value.label !== 'string' || !value.label.trim()) return undefined;
@@ -278,6 +294,7 @@ export function createPostPlacePreviewLoader(token: string) {
   };
 }
 
+// サーバーが返した場所表示を優先し、旧投稿では自動取得名または「この付近」を使う。
 export function getPostPlaceDisplay(post: SavedPost): PostPlaceDisplay {
   return post.place_display ?? {
     mode: 'auto',
@@ -286,10 +303,12 @@ export function getPostPlaceDisplay(post: SavedPost): PostPlaceDisplay {
   };
 }
 
+// 投稿の詳細を取得する。他人の投稿では、渡された現在地を閲覧条件の判定に使う。
 export async function getPostById(postId: number, token: string, viewerCoordinates?: ViewerCoordinates): Promise<SavedPost> {
   return parsePost(await request(postPath(postId), token, { viewerCoordinates, revalidate: true }));
 }
 
+// 指定した施設名で候補を検索し、施設情報と距離を検証する。
 export async function searchPostPlaceCandidates(postId: number, token: string, q = ''): Promise<PostPlaceCandidate[]> {
   const data = await request(`${postPath(postId)}place-candidates/`, token, {
     method: 'POST',
@@ -311,6 +330,7 @@ export async function searchPostPlaceCandidates(postId: number, token: string, q
   });
 }
 
+// 施設IDを保存するか自動設定へ戻し、サーバーが返した場所表示を確認する。
 export async function updatePostPlaceTag(postId: number, token: string, placeId: string | null): Promise<PostPlaceTag> {
   const failureMessage = '場所の変更結果を確認できませんでした。もう一度お試しください。';
   const data = await request(`${postPath(postId)}place-tag/`, token, {
@@ -327,14 +347,17 @@ export async function updatePostPlaceTag(postId: number, token: string, placeId:
   return { manual_place: place, place_display: display };
 }
 
+// 投稿詳細で使う認可付き写真を取得する。
 export function getPostImage(postId: number, token: string, coordinates?: ViewerCoordinates): Promise<string> {
   return getProtectedPostPhoto(postId, 'image/', token, coordinates);
 }
 
+// 投稿一覧で使う認可付きサムネイルを取得する。
 export function getPostThumbnail(postId: number, token: string, coordinates?: ViewerCoordinates, signal?: AbortSignal): Promise<string> {
   return getProtectedPostPhoto(postId, 'thumbnail/', token, coordinates, signal);
 }
 
+// 認証付きで画像を取得し、画面で表示できるデータURLに変換する。
 async function getProtectedPostPhoto(
   postId: number, path: 'image/' | 'thumbnail/', token: string, coordinates?: ViewerCoordinates, signal?: AbortSignal,
 ): Promise<string> {
@@ -368,6 +391,7 @@ async function getProtectedPostPhoto(
   }
 }
 
+// 公開範囲の変更を送り、保存後の公開状態が指定と一致するか確認する。
 export async function updatePostVisibility(postId: number, token: string, isPublished: boolean): Promise<void> {
   const result = await request(`${postPath(postId)}visibility/`, token, {
     method: 'PATCH',
@@ -378,6 +402,7 @@ export async function updatePostVisibility(postId: number, token: string, isPubl
   }
 }
 
+// 自分の投稿を削除するAPIを呼ぶ。
 export async function deletePost(postId: number, token: string): Promise<void> {
   await request(postPath(postId), token, { method: 'DELETE' });
 }

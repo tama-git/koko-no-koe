@@ -12,6 +12,7 @@ type Props = {
   onClose: () => void; // 戻るボタン・変更完了後に呼ぶ
 };
 
+// 現在と新しいパスワードを入力し、変更を送信する画面。
 export function ChangePasswordScreen({ token, onClose }: Props) {
   const {
     currentPassword, newPassword, confirmPassword, errors, message, busy,

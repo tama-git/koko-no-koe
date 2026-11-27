@@ -23,10 +23,12 @@ const overlayMessages = {
 type OverlayIssue = keyof typeof overlayMessages;
 type LocationTrackingMode = 'free' | 'position' | 'heading';
 
+// 地図から届いたエラー種別を、画面で表示できる値に絞る。
 function readOverlayIssue(issue: unknown): OverlayIssue | null {
   return issue === 'position' || issue === 'range' || issue === 'pins' ? issue : null;
 }
 
+// 現在地・投稿ピン・端末の方角から、WebViewに渡す初期地図データを組み立てる。
 function makeMapDocument(snapshot: MapSnapshot, json: string, heading: number | null) {
   return { source: { html: createOpenFreeMapDocument(snapshot, heading) }, json, point: snapshot.current };
 }
@@ -40,6 +42,7 @@ const mapCredits = [
   { label: '© OpenStreetMap', url: 'https://www.openstreetmap.org/copyright' },
 ];
 
+// 追従状態に合わせて現在地ボタンの矢印と切り替えアニメーションを表示する。
 function LocationTrackingIcon({ mode }: { mode: LocationTrackingMode }) {
   const [visibleMode, setVisibleMode] = useState(mode);
   const visibility = useRef(new Animated.Value(1)).current;
@@ -101,6 +104,7 @@ function LocationTrackingIcon({ mode }: { mode: LocationTrackingMode }) {
   );
 }
 
+// ホームの地図を表示し、地図内の描画処理とアプリの操作をつなぐ。
 export function HomeMap({
   postPins, modeRevision, nearbyPostIds, selectedPin, location, displayPosition, heading, controlsInset, onSelectPin, onOpenSettings,
 }: {
@@ -253,16 +257,19 @@ export function HomeMap({
     return () => clearTimeout(timer);
   }, [mapState, modeRevision, pinModeApplied, selectedPin]);
 
+  // 現在地ボタンの操作と、シートで隠れている範囲を地図へ渡す。
   const cycleLocationTracking = () => {
     const command = JSON.stringify({ type: 'cycle-location-tracking', bottomInset: latestControlsInset.current });
     webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${command}); true;`);
   };
 
+  // コンパスの操作を地図へ送り、北を上にする。
   const resetBearing = () => {
     const command = JSON.stringify({ type: 'reset-bearing' });
     webView.current?.injectJavaScript(`window.receiveKokoMapCommand(${command}); true;`);
   };
 
+  // 追従状態と描画済みデータを初期化し、最新の座標と投稿データで地図を読み直す。
   const reloadMap = useCallback(() => {
     pending.current = null;
     appliedJson.current = null;
@@ -284,6 +291,7 @@ export function HomeMap({
     return () => clearTimeout(timer);
   }, [mapState, document, reloadKey]);
 
+  // 地図から準備完了・追従状態・更新結果・ピン選択などを受け取って反映する。
   const onMapMessage = ({ nativeEvent }: WebViewMessageEvent) => {
     if (nativeEvent.data.length > 1024) return;
     let message: { type?: unknown; id?: unknown; issue?: unknown; requestId?: unknown;

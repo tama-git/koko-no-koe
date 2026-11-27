@@ -10,6 +10,7 @@ from accounts.models import MobileSession
 class MobileBearerAuthentication(BaseAuthentication):
     """既存のモバイルログインで発行したトークンだけを受け付ける。"""
     def authenticate(self, request):
+        # Bearerトークンの形式と有効期限を確認し、対応する会員とセッションを返す。
         parts = get_authorization_header(request).split()
         if not parts:
             return None
@@ -24,4 +25,5 @@ class MobileBearerAuthentication(BaseAuthentication):
         return session.user, session
 
     def authenticate_header(self, request):
+        # 認証エラーの応答で、Bearer認証を使用することを示す。
         return 'Bearer'

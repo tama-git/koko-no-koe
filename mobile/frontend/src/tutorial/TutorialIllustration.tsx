@@ -35,6 +35,7 @@ const illustrations = {
   </>,
 };
 
+// ページごとに指定された線画アイコンを表示する。
 export function TutorialIllustration({ icon, size, color }: { icon: TutorialIcon; size: number; color: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 80 80" accessible={false}>

@@ -5,6 +5,7 @@ import type { SavedPost } from '../posts/postService';
 
 export const RADIUS_METERS = 250;
 
+// 誤差を考慮し、250mの境界を含めて圏内かどうかを判定する。
 export function isWithinPostRadius(distance: number): boolean {
   return distance <= RADIUS_METERS + 1e-7;
 }
@@ -16,6 +17,7 @@ export function distanceMeters(
   lat2: number, lon2: number,
 ): number {
   const R = 6371008.8; // 地球の半径（メートル）
+  // 距離計算で使う角度を度からラジアンに変換する。
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);

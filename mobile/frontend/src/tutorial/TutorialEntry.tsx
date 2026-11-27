@@ -6,6 +6,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { rememberTutorialCompletion, shouldShowTutorial } from './tutorialCompletion';
 import { TutorialScreen, tutorialColors } from './TutorialScreen';
 
+// 会員登録後にチュートリアルの端末内完了状態を確認し、ホームまたはチュートリアルを表示する。
 export function TutorialEntry({ completionKey, children }: PropsWithChildren<{ completionKey: string }>) {
   const [screen, setScreen] = useState<'checking' | 'tutorial' | 'home'>('checking');
 

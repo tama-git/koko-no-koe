@@ -13,11 +13,13 @@ export function PostComposerModal({ onClose, token, onCreated }: { onClose: () =
   const [draft, setDraft] = useState<PostConfirmDraft | null>(null);
   const [savedId, setSavedId] = useState<number | null>(null);
   const loadPlacePreview = useMemo(() => createPostPlacePreviewLoader(token), [token]);
+  // 作成中の内容と写真を破棄して閉じるか確認する。
   const cancel = () => Alert.alert('投稿をやめますか？', '入力した内容や写真は破棄されます。', [
     { text: '続ける', style: 'cancel' },
     { text: '投稿をやめる', style: 'destructive', onPress: onClose },
   ]);
   const navigation = {
+    // 確認画面への遷移と地名取得、または保存した投稿の詳細への遷移を処理する。
     navigate: (screen: 'PostConfirm' | 'PostDetail', params: PostConfirmDraft | { postId: number }) => {
       if (screen === 'PostDetail') {
         setSavedId((params as { postId: number }).postId);

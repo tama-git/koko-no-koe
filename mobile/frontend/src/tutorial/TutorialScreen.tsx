@@ -21,6 +21,7 @@ export const tutorialColors = {
   muted: uiColors.neutral,
 };
 
+// 端末の動きを減らす設定を読み込んでからチュートリアルを表示する。
 export function TutorialScreen({ onExit }: { onExit: () => void }) {
   const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
 
@@ -31,6 +32,7 @@ export function TutorialScreen({ onExit }: { onExit: () => void }) {
       changed = true;
       setReduceMotion(enabled);
     });
+    // 設定変更の通知が先に届いた場合、その値を古い初期値で上書きしない。
     const setInitial = (enabled: boolean) => {
       if (active && !changed) setReduceMotion(enabled);
     };
@@ -49,6 +51,7 @@ export function TutorialScreen({ onExit }: { onExit: () => void }) {
   );
 }
 
+// 説明ページと移動ボタンを表示し、横スワイプでもページを切り替える。
 function TutorialSlides({ onExit, reduceMotion }: { onExit: () => void; reduceMotion: boolean }) {
   const { width, height } = useWindowDimensions();
   const diameter = Math.min(152, Math.max(88, Math.round(Math.min(width, height) * 0.36)));
@@ -72,6 +75,7 @@ function TutorialSlides({ onExit, reduceMotion }: { onExit: () => void; reduceMo
     },
   }), [go]);
 
+  // フェードと上方向への移動を組み合わせ、動きを減らす設定では移動を省く。
   const rise = (value: Animated.Value) => ({
     opacity: value,
     transform: [{ translateY: reduceMotion ? 0 : value.interpolate({ inputRange: [0, 1], outputRange: [9, 0] }) }],
@@ -125,6 +129,7 @@ function TutorialSlides({ onExit, reduceMotion }: { onExit: () => void; reduceMo
   );
 }
 
+// 現在のページに対応する点を横長にして表示する。
 function PageIndicator({ page, reduceMotion }: { page: number; reduceMotion: boolean }) {
   const [widths] = useState(() => tutorialPages.map((_, index) => new Animated.Value(index === page ? 22 : 7)));
   useEffect(() => {

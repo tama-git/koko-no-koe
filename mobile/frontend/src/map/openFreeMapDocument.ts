@@ -157,6 +157,7 @@ export const openFreeMapDocument = `<!doctype html>
   let distanceLineOpacityTarget = 0;
   let distanceLineFrame = null;
 
+  // 背景地図のスタイルを、徒歩で参照しやすい道路・施設の表示に調整する。
   function walkingStyle(style) {
     const poiClass = ['get', 'class'];
     const poiSubclass = ['get', 'subclass'];
@@ -187,6 +188,7 @@ export const openFreeMapDocument = `<!doctype html>
     return { ...style, layers };
   }
 
+  // 地図上の現在地を中心に閲覧半径を描画する。
   function drawRange() {
     if (!context || !map) return;
     const width = mapElement.clientWidth;
@@ -229,6 +231,7 @@ export const openFreeMapDocument = `<!doctype html>
     context.stroke();
   }
 
+  // ピンの選択表示を更新する。
   function applyPostPinSelection(id, marker) {
     const element = marker.getElement();
     const selected = id === selectedPostPinId;
@@ -236,6 +239,7 @@ export const openFreeMapDocument = `<!doctype html>
     element.setAttribute('aria-pressed', String(selected));
   }
 
+  // 選択したピンを切り替え、地図の移動と距離表示を更新する。
   function selectPostPin(id) {
     if (id === selectedPostPinId) return;
     const previousId = selectedPostPinId;
@@ -256,15 +260,18 @@ export const openFreeMapDocument = `<!doctype html>
     syncDistanceLine();
   }
 
+  // 距離を表示する条件を満たす選択中のピンを返す。
   function distancePin() {
     const pin = postPinsById.get(selectedPostPinId);
     return current && pin && !pin.isOwn && !pin.withinRadius ? pin : null;
   }
 
+  // 基準の角度から最も近い360度周期の値へ寄せる。
   function wrapLongitude(longitude, reference) {
     return longitude + 360 * Math.round((reference - longitude) / 360);
   }
 
+  // 現在地と投稿地点を、破線を引くための座標へ変換する。
   function distanceEndpoints(pin) {
     // 地図上の青い現在地マーカーの補間にも合わせ、日付変更線をまたぐ場合は近い世界のコピーを使う。
     const origin = displayedPosition ?? current;
@@ -272,6 +279,7 @@ export const openFreeMapDocument = `<!doctype html>
     return [[longitude, origin.latitude], [wrapLongitude(pin.longitude, longitude), pin.latitude]];
   }
 
+  // アニメーションの進み具合と透明度を使い、現在地から投稿地点への破線を描く。
   function drawDistanceLine() {
     const pin = postPinsById.get(distanceLineId);
     if (!current || !pin || distanceLineId !== selectedPostPinId || distanceLineProgress <= 0 || distanceLineOpacity <= 0) {
@@ -287,11 +295,13 @@ export const openFreeMapDocument = `<!doctype html>
     distanceLine.setAttribute('visibility', 'visible');
   }
 
+  // 破線のアニメーションの次フレームを取り消す。
   function cancelDistanceLineAnimation() {
     if (distanceLineFrame !== null) cancelAnimationFrame(distanceLineFrame);
     distanceLineFrame = null;
   }
 
+  // 破線の長さと透明度を時間に合わせて変化させる。
   function animateDistanceLine(toProgress, toOpacity, duration) {
     cancelDistanceLineAnimation();
     distanceLineOpacityTarget = toOpacity;
@@ -315,6 +325,7 @@ export const openFreeMapDocument = `<!doctype html>
     distanceLineFrame = requestAnimationFrame(frame);
   }
 
+  // 選択中の投稿と圏内外の状態に合わせて破線を表示、更新、または解除する。
   function syncDistanceLine() {
     const outside = distancePin();
     if (outside) {
@@ -338,6 +349,7 @@ export const openFreeMapDocument = `<!doctype html>
     drawDistanceLine();
   }
 
+  // 選択したピンに合わせて地図を移動し、圏外案内では現在地も見える範囲に収める。
   function centerPostPin(id, bottomInset) {
     if (id !== selectedPostPinId || postPinCenterSuppressed || trackingMode !== 'free') return;
     const pin = postPinsById.get(id);
@@ -382,10 +394,12 @@ export const openFreeMapDocument = `<!doctype html>
     }
   }
 
+  // ピンへ移動し終えたとき、その移動の保留状態を解除する。
   function finishPostPinCenter(event) {
     if (pendingPostPinCenter && event.postPinCenter === pendingPostPinCenter) pendingPostPinCenter = null;
   }
 
+  // 投稿とクラスタのマーカーを地図から取り除く。
   function clearMarkers() {
     clearClusterMarkers();
     markerPrefetch = null;
@@ -394,11 +408,13 @@ export const openFreeMapDocument = `<!doctype html>
     hasExtraSelectedMarker = false;
   }
 
+  // クラスタのマーカーを地図から取り除く。
   function clearClusterMarkers() {
     for (const marker of clusterMarkers.values()) marker.remove();
     clusterMarkers.clear();
   }
 
+  // 地図に重ねる投稿ピンの要素を組み立てる。
   function createPostMarker({ isOwn }) {
     const element = document.createElement('div');
     element.className = 'post-pin post-pin-bubble';
@@ -414,6 +430,7 @@ export const openFreeMapDocument = `<!doctype html>
     return new maplibregl.Marker({ element, anchor: 'bottom' });
   }
 
+  // 投稿の所有者と閲覧圏内外に合わせてピンの見た目を更新する。
   function updatePostPinAppearance(pin, marker) {
     const element = marker.getElement();
     element.classList.toggle('post-pin-outside', !pin.withinRadius && !pin.isOwn);
@@ -422,6 +439,7 @@ export const openFreeMapDocument = `<!doctype html>
     applyPostPinSelection(pin.id, marker);
   }
 
+  // 描画対象の投稿ピンを既存のマーカーに反映するか、新しく追加する。
   function showPostPinMarker(pin, renderedModeRevision) {
     const existing = activePostPins.get(pin.id);
     if (existing) {
@@ -455,6 +473,7 @@ export const openFreeMapDocument = `<!doctype html>
     activePostPins.set(pin.id, marker);
   }
 
+  // 画面に指定の余白を加えた領域を地図座標へ変換する。
   function markerBounds(paddingRatio) {
     const { clientWidth: width, clientHeight: height } = mapElement;
     const padX = width * paddingRatio;
@@ -469,6 +488,7 @@ export const openFreeMapDocument = `<!doctype html>
     return [Math.min(...longitudes), Math.min(...latitudes), Math.max(...longitudes), Math.max(...latitudes)];
   }
 
+  // 表示中の地図領域が、すでに先読みした範囲に収まっているか判定する。
   function containsMarkerBounds([west, south, east, north], [viewWest, viewSouth, viewEast, viewNorth]) {
     if (viewSouth < south || viewNorth > north) return false;
     if (east - west >= 360) return true;
@@ -478,6 +498,7 @@ export const openFreeMapDocument = `<!doctype html>
     return viewWest + offset >= west && viewEast + offset <= east;
   }
 
+  // ズームや表示範囲が先読み条件を外れたらマーカーを更新する。
   function refreshMarkerViewport() {
     cancelMarkerViewportFrame();
     if (!map || !clusterIndex) return;
@@ -486,6 +507,7 @@ export const openFreeMapDocument = `<!doctype html>
     updateClusterMarkers();
   }
 
+  // 移動中の描画範囲チェックを次の描画フレームにまとめる。
   function scheduleMarkerViewportCheck() {
     if (markerUpdateFrame !== null) return;
     markerUpdateFrame = requestAnimationFrame(() => {
@@ -494,12 +516,14 @@ export const openFreeMapDocument = `<!doctype html>
     });
   }
 
+  // 保留している描画範囲チェックを止める。
   function cancelMarkerViewportFrame() {
     if (markerUpdateFrame === null) return;
     cancelAnimationFrame(markerUpdateFrame);
     markerUpdateFrame = null;
   }
 
+  // 複数投稿をまとめた件数マーカーを配置し、タップに応じて地図を拡大する。
   function showClusterMarker(cluster, renderedModeRevision) {
     const id = cluster.id;
     if (clusterMarkers.has(id)) return;
@@ -533,6 +557,7 @@ export const openFreeMapDocument = `<!doctype html>
     clusterMarkers.set(id, marker);
   }
 
+  // 先読み領域のピンとクラスタを描画し、範囲を出たマーカーを取り除く。
   function updateClusterMarkers() {
     if (!map || !clusterIndex || !mapElement.clientWidth || !mapElement.clientHeight) return;
 
@@ -577,6 +602,7 @@ export const openFreeMapDocument = `<!doctype html>
     }
   }
 
+  // アプリから受け取ったピンを取り込み、必要に応じてクラスタの索引を更新する。
   function updatePins(snapshot) {
     const geometryChanged = !clusterIndex || snapshot.pins.length !== postPinsById.size || snapshot.pins.some(pin => {
       const previous = postPinsById.get(pin.id);
@@ -616,12 +642,14 @@ export const openFreeMapDocument = `<!doctype html>
     updateClusterMarkers();
   }
 
+  // 保留している追従カメラの更新を取り消す。
   function cancelTrackingCameraFrame() {
     if (trackingCameraFrame === null) return;
     cancelAnimationFrame(trackingCameraFrame);
     trackingCameraFrame = null;
   }
 
+  // 追従モードを切り替え、現在地ボタンの表示に使う状態をアプリへ通知する。
   function setTrackingMode(mode) {
     if (mode === trackingMode) return;
     trackingMode = mode;
@@ -629,11 +657,13 @@ export const openFreeMapDocument = `<!doctype html>
     send({ type: 'location-tracking', mode });
   }
 
+  // 地図の向きを記録し、その向きを保つ現在地追従へ切り替える。
   function startPositionTracking(bearing = map.getBearing()) {
     positionTrackingBearing = bearing;
     setTrackingMode('position');
   }
 
+  // 自由操作に戻し、操作中のジェスチャーを妨げない条件でカメラを止める。
   function releaseLocationCamera() {
     if (trackingMode === 'free') return;
     setTrackingMode('free');
@@ -641,6 +671,7 @@ export const openFreeMapDocument = `<!doctype html>
     if (!userCameraMoving && mapTouchCount === 0) map.stop();
   }
 
+  // シートを除いた地図の中央へ現在地を移し、追従モードに応じて地図の向きを調整する。
   function moveTrackingCamera(zoom = map.getZoom()) {
     if (!markerTarget || trackingMode === 'free' || userCameraMoving || mapTouchCount > 0) return;
     const height = mapElement.clientHeight;
@@ -658,6 +689,7 @@ export const openFreeMapDocument = `<!doctype html>
       easeId: 'location-tracking' });
   }
 
+  // 位置や方角の変更によるカメラ更新を次の描画フレームにまとめる。
   function scheduleTrackingCamera() {
     if (trackingMode === 'free' || userCameraMoving || mapTouchCount > 0 || trackingCameraFrame !== null) return;
     trackingCameraFrame = requestAnimationFrame(() => {
@@ -666,6 +698,7 @@ export const openFreeMapDocument = `<!doctype html>
     });
   }
 
+  // 現在地ボタンに応じて追従を切り替える。指が地図に触れている間は処理しない。
   function cycleLocationTracking(bottomInset) {
     if (!markerTarget || mapTouchCount > 0) return;
     const wasFree = trackingMode === 'free';
@@ -684,11 +717,13 @@ export const openFreeMapDocument = `<!doctype html>
     moveTrackingCamera(wasFree ? Math.max(map.getZoom(), ${CURRENT_LOCATION_ZOOM}) : map.getZoom());
   }
 
+  // 地図に触れている指の本数を記録し、すべて離れたら追従カメラの更新を予約する。
   function updateTrackingTouches(event) {
     mapTouchCount = event.originalEvent?.touches?.length ?? 0;
     if (mapTouchCount === 0) scheduleTrackingCamera();
   }
 
+  // 地図操作中の追従の停止・解除・再開に必要なイベントを登録する。
   function bindLocationTrackingEvents() {
     map.on('touchstart', updateTrackingTouches);
     map.on('touchend', updateTrackingTouches);
@@ -710,16 +745,19 @@ export const openFreeMapDocument = `<!doctype html>
     });
   }
 
+  // 地図の回転に合わせて、現在地マーカーの方角表示を補正する。
   function updateBearing() {
     if (bearingLayer) bearingLayer.style.transform = 'rotate(' + -map.getBearing() + 'deg)';
   }
 
+  // 端末の方角が取得できているときに、現在地マーカーの方向を表示する。
   function drawHeading() {
     if (!cone) return;
     bearingLayer.hidden = headingAngle === null;
     if (headingAngle !== null) cone.style.transform = 'rotate(' + headingAngle + 'deg)';
   }
 
+  // 最新の端末方角を反映し、方角追従中は地図の回転も更新する。
   function updateHeading(degrees) {
     const previous = headingAngle;
     if (degrees === null || headingAngle === null) {
@@ -735,12 +773,14 @@ export const openFreeMapDocument = `<!doctype html>
     }
   }
 
+  // 現在地マーカーの保留中の移動アニメーションを止める。
   function cancelPositionAnimation() {
     if (positionFrame === null) return;
     cancelAnimationFrame(positionFrame);
     positionFrame = null;
   }
 
+  // 現在地マーカーを新しい座標へ滑らかに移動させる。
   function animatePosition(point) {
     cancelPositionAnimation();
     const start = displayedPosition;
@@ -760,6 +800,7 @@ export const openFreeMapDocument = `<!doctype html>
     positionFrame = requestAnimationFrame(frame);
   }
 
+  // 現在地マーカーを作成・移動・解除し、追従中のカメラを更新する。
   function updateCurrent(point, displayPoint) {
     current = point;
     if (current) {
@@ -811,6 +852,7 @@ export const openFreeMapDocument = `<!doctype html>
     }
   }
 
+  // アプリから受け取った現在地・閲覧範囲・投稿ピンを地図に反映する。
   function applySnapshot(snapshot) {
     if (snapshot.modeRevision !== pinModeRevision) {
       pinModeRevision = snapshot.modeRevision;
@@ -886,6 +928,7 @@ export const openFreeMapDocument = `<!doctype html>
       modeRevision: appliedPinModeRevision });
   };
 
+  // アプリから地図へ送られたメッセージを読み取る。
   function receiveCommand(event) {
     if (typeof event.data !== 'string') return;
     let command;
@@ -955,6 +998,7 @@ export const openFreeMapDocument = `<!doctype html>
 </body>
 </html>`;
 
+// 現在地と投稿データを初期値とする、ホーム地図のWebView用HTMLを生成する。
 export function createOpenFreeMapDocument(snapshot: MapSnapshot, heading: number | null = null): string {
   const json = JSON.stringify({ ...snapshot, heading }).replace(/</g, '\\u003c');
   return openFreeMapDocument.replace(

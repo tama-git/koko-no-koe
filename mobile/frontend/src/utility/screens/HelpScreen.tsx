@@ -37,10 +37,12 @@ const FAQ_DATA = [
 ];
 
 // @ts-ignore
+// 設定から開くヘルプを表示し、項目ごとに説明を展開できるようにする。
 export function HelpScreen({ token, onClose }: Props) {
   const [openId, setOpenId] = useState(null);
 
   // @ts-ignore
+  // 選んだヘルプ項目の説明を開閉する。
   const toggleAccordion = (id) => {
     setOpenId(openId === id ? null : id);
   };

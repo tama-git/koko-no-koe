@@ -89,6 +89,7 @@ export function PostCreateScreen({ navigation }: { navigation: any }) {
     }
   };
 
+  // 本文または写真と確定済みの座標を確認し、投稿確認画面に引き継ぐ。
   const handleGoToConfirm = () => {
     if (cameraBusy.current || postLocation?.status !== 'ready') return;
     if (!message.trim() && !photo) {

@@ -9,6 +9,7 @@ export const POST_SORT_LABELS: Record<PostSortOrder, string> = {
   nearest: '近い順',
 };
 
+// 指定された新しい順・古い順・現在地から近い順で、一覧の表示順を決める。
 export function sortPosts(posts: readonly SavedPost[], order: PostSortOrder, coordinates?: ViewerCoordinates): SavedPost[] {
   const oldestFirst = order === 'oldest';
   const origin = order === 'nearest' ? coordinates : undefined;

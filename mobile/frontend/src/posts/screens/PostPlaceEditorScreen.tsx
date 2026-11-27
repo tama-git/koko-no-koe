@@ -24,6 +24,7 @@ const categoryLabels = [
   ['tourism.sights', '観光施設'],
 ];
 
+// 施設のカテゴリを候補一覧用の日本語ラベルに変換する。
 function formatCategory(categories: string[]) {
   return categoryLabels.find(([key]) => categories.some(category => category === key || category.startsWith(`${key}.`)))?.[1] ?? '施設';
 }
@@ -33,6 +34,7 @@ type SearchResult =
   | { state: 'error'; message: string }
   | { state: 'ready'; candidates: PostPlaceCandidate[] };
 
+// 投稿地点周辺の施設を検索し、手動の場所タグを設定または解除する画面。
 export function PostPlaceEditorScreen({ postId, token, currentPlace, selectedPlaceId, onClose, onSaved }: {
   postId: number;
   token: string;
@@ -68,6 +70,7 @@ export function PostPlaceEditorScreen({ postId, token, currentPlace, selectedPla
     return () => { active = false; };
   }, [postId, token, request]);
 
+  // 施設名の入力を整え、候補をサーバーへ問い合わせ直す。
   const search = (q: string) => {
     if (pendingSave.current || results.state === 'loading') return;
     Keyboard.dismiss();
@@ -76,12 +79,14 @@ export function PostPlaceEditorScreen({ postId, token, currentPlace, selectedPla
     setRequest({ q: q.trim() });
   };
 
+  // 保存処理が終わっているときに場所タグ編集を閉じる。
   const close = () => {
     if (pendingSave.current) return;
     Keyboard.dismiss();
     onClose();
   };
 
+  // 選んだ施設IDを保存する。自動設定に戻すときは施設IDにnullを渡す。
   const save = async (placeId: string | null) => {
     if (pendingSave.current) return;
     pendingSave.current = true;

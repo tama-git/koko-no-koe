@@ -14,6 +14,7 @@ export function ownPostsToPins(posts: readonly SavedPost[]): PostPin[] {
   return pins;
 }
 
+// タップが現在の投稿モードのピンに対する操作であることを確認し、選択情報を返す。
 export function resolvePostPinTap(
   pins: readonly PostPin[], pinId: unknown, eventRevision: unknown, modeRevision: number,
 ): MapPinSelection | null {

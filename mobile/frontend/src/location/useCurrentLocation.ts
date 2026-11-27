@@ -10,6 +10,7 @@ export type LocationState = LocationResult | { status: 'loading' };
 const HEADING_DEADBAND_DEGREES = 3;
 const LOW_ACCURACY_DEADBAND_DEGREES = 10;
 
+// ホームの位置情報と端末方角を取得し、地図の表示用座標を更新する。
 export function useCurrentLocation() {
   const [state, setState] = useState<LocationState>({ status: 'loading' });
   const [displayPosition, setDisplayPosition] = useState<DisplayPosition | null>(null);
@@ -19,6 +20,7 @@ export function useCurrentLocation() {
     let generation = 0;
     let subscription: Location.LocationSubscription | undefined;
     let headingSubscription: Location.LocationSubscription | undefined;
+    // 測位と端末方角の監視を停止し、過去の取得結果を無効にする。
     const stop = () => {
       generation += 1;
       subscription?.remove();
@@ -26,6 +28,7 @@ export function useCurrentLocation() {
       headingSubscription?.remove();
       headingSubscription = undefined;
     };
+    // 現在地を取得してから、現在地と端末方角の監視を開始する。
     const start = async () => {
       stop();
       const current = generation;
@@ -41,6 +44,7 @@ export function useCurrentLocation() {
       const trackDisplayPosition = createDisplayPositionTracker(initial);
       setDisplayPosition(initial);
 
+      // 現在の監視で方角を取得できなくなったときに、保持している方角を解除する。
       const clearHeading = () => { if (current === generation) setHeading(null); };
       void Location.watchHeadingAsync(({ trueHeading, magHeading, accuracy }) => {
         if (current !== generation) return;
@@ -95,6 +99,7 @@ export function useCurrentLocation() {
       stop();
     };
   }, [attempt]);
+  // 再取得の操作を受けて、測位をやり直す。
   const retryLocation = () => setAttempt(previous => previous + 1);
   return { location: state, displayPosition, heading, retryLocation };
 }

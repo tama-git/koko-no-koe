@@ -7,6 +7,7 @@ import type { AuthController } from '../useAuth';
 
 type Props = { auth: AuthController };
 
+// 登録情報の入力と認証コードの入力を、仮登録の進み具合に応じて切り替える。
 export function RegisterScreen({ auth }: Props) {
   if (!auth.isVerifyingRegistration) {
     return <AuthForm auth={auth} title="会員登録" />;
@@ -62,6 +63,7 @@ export function RegisterScreen({ auth }: Props) {
   );
 }
 
+// 会員登録の完了を知らせ、「次へ」で登録後の画面へ進む。
 export function RegistrationCompleteScreen({ onContinue }: { onContinue: () => void }) {
   return (
     <AppScreen>

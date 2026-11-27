@@ -13,6 +13,7 @@ import { uiColors } from '../../shared/uiColors';
 const THUMBNAIL_LOOKAHEAD = 120;
 const THUMBNAIL_SCROLL_DELAY_MS = 120;
 
+// 場所・本文・日時をカードに表示し、画面に近づいた写真付き投稿だけサムネイルを取得する。
 export function PostListCard({ post, onSelectPost, scope, token, coordinates, viewportHeight, scrollY }: {
   post: SavedPost;
   onSelectPost: (id: number) => void;

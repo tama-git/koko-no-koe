@@ -5,6 +5,7 @@ from .models import AdminUser
 
 
 def is_admin_account(user):
+    # 有効な管理者アカウントであり、スタッフ権限を持つかを確認する。
     return isinstance(user, AdminUser) and user.is_active and user.is_staff
 
 

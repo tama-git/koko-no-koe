@@ -39,6 +39,7 @@ NUMBERED_DISTRICT = re.compile(r'([0-9]{1,3})(?:区|(?:st|nd|rd|th)?\s+arr(?:ond
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # APIキーや座標を別の接続先へ送らないよう、リダイレクトを拒否する。
         return None
 
 
@@ -49,11 +50,13 @@ class PostPlaceServiceError(Exception):
     """A service failure that does not contain request data."""
 
     def __init__(self, reason, *, http_status=None):
+        # 呼び出し元が失敗を判定できるよう、理由とHTTPステータスを保持する。
         super().__init__(reason)
         self.http_status = http_status
 
 
 def _service_failure(reason, strict, *, http_status=None):
+    # 安全な概要だけを記録し、厳密モードでは呼び出し元にも失敗を通知する。
     # URL・例外本文には投稿座標やキーが含まれるため記録しない。
     logger.warning('Geoapify: %s', reason)
     if strict:
@@ -61,6 +64,7 @@ def _service_failure(reason, strict, *, http_status=None):
 
 
 def _clean_text(value, max_length=100):
+    # 地名や出典の文字を整え、不正な文字列や長すぎる値を取り除く。
     if not isinstance(value, str) or any(unicodedata.category(char).startswith('C') for char in value):
         return ''
     value = ' '.join(unicodedata.normalize('NFKC', value).split())
@@ -70,6 +74,7 @@ def _clean_text(value, max_length=100):
 
 
 def geoapify_attribution(result):
+    # Geoapifyの応答から出典名を取り出し、既知の提供元のURLを付ける。
     source = result.get('datasource')
     if not isinstance(source, dict):
         return None
@@ -81,11 +86,13 @@ def geoapify_attribution(result):
 
 
 def _japanese_municipality(result):
+    # 国内の住所候補から市区町村として表示できる名前を選ぶ。
     names = [_clean_text(result.get(field)) for field in ('district', 'county', 'city')]
     return next((name for name in names if name.endswith(('市', '区', '町', '村')) and len(name) > 1), names[-1])
 
 
 def _japanese_town(value, *, from_street=False):
+    # 丁目などを除いた国内の町名を取り出し、道路名のような値を除外する。
     name = _clean_text(value)
     has_aza_prefix = name.startswith('大字')
     name = name.removeprefix('大字').strip()
@@ -100,6 +107,7 @@ def _japanese_town(value, *, from_street=False):
 
 
 def _nearby_japanese_town(result, coordinates):
+    # 投稿地点に十分近い国内の候補から、表示に使える町名を探す。
     point = validated_coordinates((result.get('lat'), result.get('lon')))
     if (
         result.get('country_code') != 'jp'
@@ -120,6 +128,7 @@ def _nearby_japanese_town(result, coordinates):
 
 
 def _foreign_place(result):
+    # 海外の地区名を選び、番号だけの地区名には判別できるよう都市名を添える。
     city = _clean_text(result.get('city'))
     for field in ('district', 'suburb', 'quarter', 'neighbourhood'):
         name = _clean_text(result.get(field))
@@ -136,6 +145,7 @@ def _foreign_place(result):
 
 
 def _select_place(results, coordinates):
+    # 候補の一致と出典を確認し、表示する地名を決める。
     if not isinstance(results, list) or not results or not isinstance(results[0], dict):
         return None
     result = results[0]
@@ -159,6 +169,7 @@ def _select_place(results, coordinates):
 
 
 def request_geoapify_json(endpoint, parameters, *, strict=False, max_response_bytes=MAX_RESPONSE_BYTES):
+    # Geoapifyへ問い合わせ、制限時間と応答サイズを守ってJSONを受け取る。
     api_key = settings.GEOAPIFY_API_KEY
     if not api_key:
         _service_failure('GEOAPIFY_API_KEY is not configured.', strict)
@@ -186,6 +197,7 @@ def request_geoapify_json(endpoint, parameters, *, strict=False, max_response_by
 
 
 def lookup_post_place(latitude, longitude, *, strict=False):
+    # 投稿座標から逆ジオコーディングを行い、地名と出典を取得する。
     coordinates = validated_coordinates((latitude, longitude))
     if coordinates is None:
         return None
@@ -208,6 +220,7 @@ def lookup_post_place(latitude, longitude, *, strict=False):
 
 
 def lookup_cached_post_place(user_id, latitude, longitude):
+    # 会員と投稿座標ごとに地名の検索結果を再利用し、同時の問い合わせを抑止する。
     # 確認APIと投稿APIは小数7桁のDecimalに揃える。-0と+0は同じ地点として扱う。
     coordinates = f'{latitude or 0:.7f}:{longitude or 0:.7f}'
     fingerprint = salted_hmac('posts.place-preview.v1', f'{user_id}:{coordinates}').hexdigest()

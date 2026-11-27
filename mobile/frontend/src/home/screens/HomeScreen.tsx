@@ -71,6 +71,7 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
     }
   }, [selection, viewerCoordinates, nearbyPostIds, withinRadius, revoked, selectedPin]);
 
+  // 選択した投稿について、詳細の取得を始めるか圏外案内を出すかを判断する。
   const beginVisit = useCallback((pin: MapPinSelection) => {
     const current = readContext.current;
     const inRange = getPostProximity(current.viewerCoordinates, pin.point)?.withinRadius === true;
@@ -84,6 +85,7 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
     error: locationFailed ? '現在地を取得できませんでした。位置情報の設定を確認して再取得してください。' : publicPosts.error,
     refresh: locationFailed ? retryLocation : publicPosts.refresh,
   };
+  // 表示中の一覧から選んだ投稿を探し、地図のピンと同じ流れで開く。
   const selectListPost = (id: number) => {
     if (activePostMode.current.revision !== modeRevision) return;
     const post = (mode === 'own' ? ownPosts.posts : nearbyPosts).find(item => item.id === id);
@@ -92,6 +94,7 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
       ? null : { latitude: post.latitude, longitude: post.longitude };
     beginVisit({ id, own: mode === 'own' || post.is_own === true, point });
   };
+  // 「周りの声」と「自分の投稿」を切り替え、前のモードの投稿選択を解除する。
   const selectMode = useCallback((nextMode: PostListScope) => {
     const current = activePostMode.current;
     if (nextMode === current.scope) return;
@@ -100,17 +103,22 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
     setPostMode(next);
     setSelection(null);
   }, []);
+  // 下部メニューから対応する一覧を選び、詳細の選択を解除して一覧の表示を要求する。
   const selectMenuMode = (nextMode: PostListScope) => {
     selectMode(nextMode);
     setSelection(null);
     setListOpenRequest(request => request + 1);
   };
+  // 切り替え前の表示に属するピン操作を除き、現在のモードのピンを開く。
   const selectMapPin = useCallback((pinSelection: MapPinSelection, revision: number) => {
     // 切り替えボタンを押した直後は、Reactの再描画前に届いた旧ピンのイベントも破棄する。
     if (activePostMode.current.revision === revision) beginVisit(pinSelection);
   }, [beginVisit]);
+  // 投稿一覧と地図ピンを再取得するための更新番号を進める。
   const refreshPosts = () => setRefreshKey(value => value + 1);
+  // 閲覧中の投稿選択を解除して一覧へ戻る。
   const closeDetail = () => setSelection(null);
+  // 削除や非表示が終わった投稿を閉じ、一覧と地図ピンを更新する。
   const finishPostChange = () => {
     setSelection(current => current?.pin === selectedPin ? null : current);
     refreshPosts();
@@ -129,6 +137,7 @@ export function HomeScreen({ token, busy, onLogout, user }: Props) {
   const showPost = selection?.phase === 'reading' ||
     (selection?.phase === 'opening' && (selection.pin.own || withinRadius));
   const arrived = withinRadius && selectedPin !== null && nearbyPostIds.has(selectedPin.id) && !revoked;
+  // 「声を読む」が押された時点の閲覧条件を確認し、投稿詳細の取得を始める。
   const openArrivedPost = () => {
     const current = readContext.current;
     if (current.revoked || !current.withinRadius || !selectedPin || !current.nearbyPostIds.has(selectedPin.id)) return;

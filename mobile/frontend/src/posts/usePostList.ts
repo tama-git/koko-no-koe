@@ -7,6 +7,7 @@ export type PostListScope = 'own' | 'public';
 
 const VISIBILITY_CHECK_INTERVAL_MS = 15000;
 
+// 投稿モードに応じた一覧と地図ピンの取得・更新状態を管理する。
 export function usePostList(
   token: string, scope: PostListScope, refreshKey: number, coordinates?: ViewerCoordinates, monitorVisibility = false,
 ) {
@@ -36,6 +37,7 @@ export function usePostList(
     setError('');
     setLoading(true);
 
+    // 条件に応じて投稿一覧または地図ピンを取得し、現在の取得結果に反映する。
     const load = async (pinsOnly = false) => {
       if (pending) return;
       pending = true;
@@ -99,7 +101,9 @@ export function usePostList(
     };
   }, [token, scope, refreshKey, retry, hasCoordinates]);
 
+  // 読み込み中でなければ、投稿一覧の再取得を要求する。
   const refresh = () => { if (!loading) setRetry(value => value + 1); };
+  // 場所タグ更新後、一覧にある対象投稿の場所表示を差し替える。
   const updatePlaceDisplay = (postId: number, placeDisplay: PostPlaceDisplay) => {
     pendingPlaceChanges.current?.set(postId, placeDisplay);
     setPosts(current => current.map(post => post.id === postId ? { ...post, place_display: placeDisplay } : post));

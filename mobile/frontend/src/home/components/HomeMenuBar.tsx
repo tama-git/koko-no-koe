@@ -5,6 +5,7 @@ import type { PostListScope } from '../../posts/usePostList';
 import { POST_MODE_LABELS } from './bottomSheetTabs';
 import { uiColors } from '../../shared/uiColors';
 
+// 「周りの声」「自分の投稿」の切り替えと、「声を残す」の入口を表示する。
 export function HomeMenuBar({ mode, onSelectMode, onCompose, onLayout, composeDisabled }: {
   mode: PostListScope;
   onSelectMode: (mode: PostListScope) => void;
@@ -12,6 +13,7 @@ export function HomeMenuBar({ mode, onSelectMode, onCompose, onLayout, composeDi
   onLayout: (event: LayoutChangeEvent) => void;
   composeDisabled: boolean;
 }) {
+  // 一覧の種類ごとにボタンを表示し、現在の選択状態を反映する。
   const renderMode = (id: PostListScope) => {
     const selected = mode === id;
     return (
@@ -42,6 +44,7 @@ export function HomeMenuBar({ mode, onSelectMode, onCompose, onLayout, composeDi
   );
 }
 
+// 地図・投稿作成・本人一覧に対応するアイコンを描く。
 function MenuIcon({ name, color }: { name: PostListScope | 'compose'; color: string }) {
   return (
     <Svg width={21} height={21} viewBox="0 0 24 24" fill="none" stroke={color}

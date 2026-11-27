@@ -16,6 +16,7 @@ class ContactCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        # 問い合わせ本文を、ログイン中の会員と送信時のメールアドレスにひも付けて保存する。
         # 1. フロントエンドから送られてきたメッセージを取得
         message = request.data.get('message')
 

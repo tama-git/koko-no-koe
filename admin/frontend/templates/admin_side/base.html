@@ -19,12 +19,13 @@
     </a>
     <p class="nav-label">ワークスペース</p>
     <nav aria-label="メインナビゲーション">
-      <a class="nav-item {% block overview_class %}{% endblock %}" href="{% url 'admin_side:dashboard' %}">
+      {% firstof back_route request.resolver_match.view_name as active_route %}
+      <a class="nav-item{% if active_route == 'admin_side:dashboard' %} active{% endif %}"{% if active_route == 'admin_side:dashboard' %} aria-current="true"{% endif %} href="{% url 'admin_side:dashboard' %}">
         <span aria-hidden="true">▦</span> インデックス
       </a>
-      <a class="nav-item" href="{% url 'admin_side:posts' %}">投稿一覧</a>
-      <a class="nav-item" href="{% url 'admin_side:reports' %}">通報一覧</a>
-      <a class="nav-item" href="{% url 'admin_side:contacts' %}">お問い合わせ一覧</a>
+      <a class="nav-item{% if active_route == 'admin_side:posts' %} active{% endif %}"{% if active_route == 'admin_side:posts' %} aria-current="true"{% endif %} href="{% url 'admin_side:posts' %}">投稿一覧</a>
+      <a class="nav-item{% if active_route == 'admin_side:reports' %} active{% endif %}"{% if active_route == 'admin_side:reports' %} aria-current="true"{% endif %} href="{% url 'admin_side:reports' %}">通報一覧</a>
+      <a class="nav-item{% if active_route == 'admin_side:contacts' or active_route == 'contact-admin-detail' %} active{% endif %}"{% if active_route == 'admin_side:contacts' or active_route == 'contact-admin-detail' %} aria-current="true"{% endif %} href="{% url 'admin_side:contacts' %}">お問い合わせ一覧</a>
     </nav>
     <div class="sidebar-footer">
       <span class="connection-dot"></span> ローカル環境<small>管理者モード</small>

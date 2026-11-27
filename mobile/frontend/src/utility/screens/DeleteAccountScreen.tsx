@@ -13,6 +13,7 @@ type Props = {
   onDeleted: () => Promise<void>; // 退会完了後に呼ぶ（ログアウト処理に繋がる）
 };
 
+// 会員がパスワードを入力して退会するための画面。
 export function DeleteAccountScreen({ token, onClose, onDeleted }: Props) {
   const { password, passwordError, message, busy, setPassword, handleSubmit } = useDeleteAccount(token, () => {
     // 退会成功 → Alert を出してからログアウト処理に移る
@@ -20,6 +21,7 @@ export function DeleteAccountScreen({ token, onClose, onDeleted }: Props) {
   });
 
   // 「退会する」ボタンを押したとき：確認 Alert を出してから送信する（二段階確認）
+  // 退会の影響を案内し、確認後にパスワードを添えて退会を実行する。
   const confirmAndSubmit = () => {
     Alert.alert(
       '退会の確認',
