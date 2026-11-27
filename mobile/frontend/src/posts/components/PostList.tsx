@@ -10,18 +10,22 @@ import { PostListCard } from './PostListCard';
 import { PostPlaceCredits } from './PostPlaceCredits';
 import { uiColors } from '../../shared/uiColors';
 
+// 現在地が使えないときは、距離順の代わりに新しい順を選ぶ。
 function getCurrentOrder(order: PostSortOrder, canSortByDistance: boolean): PostSortOrder {
   return !canSortByDistance && order === 'nearest' ? 'newest' : order;
 }
 
+// 投稿一覧の現在の順序を表示し、変更先を選ぶメニューを開く。
 export function PostListSortButton({ order, canSortByDistance, onOrderChange }: {
   order: PostSortOrder;
   canSortByDistance: boolean;
   onOrderChange: (order: PostSortOrder) => void;
 }) {
   const currentOrder = getCurrentOrder(order, canSortByDistance);
+  // 選べる並べ替え順を端末に合った形式で表示する。
   const chooseOrder = () => {
     const options: PostSortOrder[] = canSortByDistance ? ['newest', 'oldest', 'nearest'] : ['newest', 'oldest'];
+    // 選んだ並べ替え順を変更先へ通知する。
     const select = (next: PostSortOrder) => {
       if (next !== currentOrder) onOrderChange(next);
     };

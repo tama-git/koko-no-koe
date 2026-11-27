@@ -11,6 +11,7 @@ export type LocationClient = {
   getPosition: () => Promise<{ coords: Coordinates }>;
 };
 
+// 位置情報の許可と端末設定を確認して測位し、取得結果や失敗理由を返す。
 export async function requestCurrentLocation(client: LocationClient, timeoutMs = 15000): Promise<LocationResult> {
   try {
     const permission = await client.requestPermission();

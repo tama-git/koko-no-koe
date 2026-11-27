@@ -23,5 +23,6 @@ def readable_posts(queryset, viewer, coordinates=None, *, include_owned=True):
 
 
 def visible_public_posts(queryset, viewer):
+    # 公開投稿から、管理者非表示と閲覧者本人が個別に非表示にした投稿を除く。
     hidden = HiddenPost.objects.filter(user_id=viewer).values('post_id')
     return queryset.filter(is_public=True, admin_hidden_at__isnull=True).exclude(pk__in=hidden)

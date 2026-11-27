@@ -11,6 +11,7 @@ export const REPORT_CATEGORIES = [
 export type ReportCategory = typeof REPORT_CATEGORIES[number]['value'];
 export const REPORT_DETAILS_LIMIT = 100;
 
+// 通報カテゴリ、補足の必須条件、文字数を確認して入力エラーを返す。
 export function validateReport(category: ReportCategory | null, details: string): string {
   if (!category) return '通報理由のカテゴリを選択してください。';
   if (category === 'other' && !details.trim()) return 'その他を選んだ場合は理由を入力してください。';
@@ -18,6 +19,7 @@ export function validateReport(category: ReportCategory | null, details: string)
   return '';
 }
 
+// 入力を確認し、認証付きで対象の投稿を通報する。
 export async function submitReport(postId: number, token: string, category: ReportCategory, details: string) {
   const inputError = validateReport(category, details);
   if (inputError) throw new Error(inputError);

@@ -9,6 +9,7 @@ const sourceLicenseLinks: Record<string, PostPlaceAttribution | undefined> = {
   'https://openaddresses.io/': { label: 'OpenAddresses 出典一覧', url: 'https://openaddresses.io/attribution/' },
 };
 
+// 一覧カードに、Geoapifyとその場所データ提供元の出典を短く表示する。
 export function PostPlaceCreditLine({ source }: { source: PostPlaceAttribution }) {
   const license = source.url ? sourceLicenseLinks[source.url] : undefined;
   const label = source.url === openStreetMapCredit.url && source.label === openStreetMapCredit.label
@@ -22,6 +23,7 @@ export function PostPlaceCreditLine({ source }: { source: PostPlaceAttribution }
   );
 }
 
+// 場所データの出典を重複なく表示し、必要に応じてライセンスへのリンクも加える。
 export function PostPlaceCredits({ sources, compact = false }: { sources: PostPlaceAttribution[]; compact?: boolean }) {
   if (!sources.length) return null;
   const credits = [...sources];
@@ -41,6 +43,7 @@ export function PostPlaceCredits({ sources, compact = false }: { sources: PostPl
   );
 }
 
+// 出典を表示し、URLがある場合はタップでリンクを開く。
 function Credit({ label, url, compact, inCard = false }: PostPlaceAttribution & { compact: boolean; inCard?: boolean }) {
   const textStyle = [styles.text, compact && styles.compactText, inCard && styles.cardText];
   return url ? (

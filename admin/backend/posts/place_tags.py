@@ -20,10 +20,12 @@ PLACE_ID_PATTERN = re.compile(r'[A-Za-z0-9_-]{2,2048}')
 
 
 def valid_place_id(value):
+    # 施設IDが許可された文字と長さで構成されるか確認する。
     return isinstance(value, str) and PLACE_ID_PATTERN.fullmatch(value) is not None
 
 
 def _facility_features(endpoint, parameters):
+    # Geoapifyの施設検索・施設詳細の応答を検証し、施設ごとの属性を取り出す。
     response = request_geoapify_json(endpoint, parameters, strict=True, max_response_bytes=MAX_PLACES_RESPONSE_BYTES)
     if response.get('type') != 'FeatureCollection' or not isinstance(response.get('features'), list):
         raise PostPlaceServiceError('Invalid Places response.')
@@ -34,6 +36,7 @@ def _facility_features(endpoint, parameters):
 
 
 def _verified_facility(properties, post_coordinates):
+    # 施設名・出典・種類・座標を検証し、投稿地点から250m以内の候補だけを返す。
     name = properties.get('name')
     place_id = properties.get('place_id')
     attribution = geoapify_attribution(properties)
@@ -62,6 +65,7 @@ def _verified_facility(properties, post_coordinates):
 
 
 def search_place_candidates(post_coordinates, term, *, offset=0):
+    # 投稿地点の周辺施設を名前で検索し、重複を除いて近い順に返す。
     lat, lon = post_coordinates
     parameters = {
         'categories': ','.join(FACILITY_CATEGORIES),
@@ -88,6 +92,7 @@ def search_place_candidates(post_coordinates, term, *, offset=0):
 
 
 def verify_manual_place(place_id, post_coordinates):
+    # 選択された施設をIDから引き直し、保存できる距離・名称・出典を確認する。
     try:
         for properties in _facility_features(PLACE_DETAILS_URL, {'id': place_id, 'lang': 'ja'}):
             if properties.get('feature_type') == 'details':

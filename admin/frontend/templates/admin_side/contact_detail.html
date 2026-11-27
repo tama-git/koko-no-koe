@@ -2,8 +2,6 @@
 
 {% block title %}お問い合わせ #{{ contact.id }} の詳細{% endblock %}
 
-{% block overview_class %}active{% endblock %}
-
 {% block account_actions %}
   <form method="post" action="{% url 'admin_side:logout' %}">
     {% csrf_token %}

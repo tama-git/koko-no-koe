@@ -33,10 +33,12 @@ export const tutorialPages = [
 
 export type TutorialIcon = typeof tutorialPages[number]['icon'];
 
+// 先頭と末尾を越えない範囲で、一つ前または次のページを求める。
 export function nextTutorialPage(page: number, direction: -1 | 1) {
   return Math.min(tutorialPages.length - 1, Math.max(0, page + direction));
 }
 
+// 十分な横移動があった場合に、前後どちらのページへ進むかを返す。
 export function tutorialSwipeDirection(dx: number, dy: number) {
   if (Math.abs(dx) < 48 || Math.abs(dx) <= Math.abs(dy) * 1.5) return null;
   return dx < 0 ? 1 : -1;

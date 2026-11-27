@@ -18,6 +18,7 @@ type Props = { onClose: () => void } & (
   | { distanceMeters: number | null }
 );
 
+// 旧一覧モーダル用の詳細表示。ホームの圏外案内は下のPostDistanceNoticeを使う。
 export function PostDetailModal(props: Props) {
   const { onClose } = props;
   return (
@@ -41,6 +42,7 @@ export function PostDetailModal(props: Props) {
   );
 }
 
+// 旧詳細モーダルで現在地から投稿までの距離を表示する。
 function DistanceCard({ distanceMeters }: { distanceMeters: number | null }) {
   return <View style={styles.card}>
     <Text style={styles.label}>{distanceMeters === null ? '距離を表示できません' : '範囲外の投稿'}</Text>
@@ -51,6 +53,7 @@ function DistanceCard({ distanceMeters }: { distanceMeters: number | null }) {
   </View>;
 }
 
+// 選択中の投稿について、圏外では距離と方角、圏内では「声を読む」を表示する。
 export function PostDistanceNotice({ proximity, arrived, onRead }: {
   proximity: ReturnType<typeof getPostProximity>;
   arrived: boolean;

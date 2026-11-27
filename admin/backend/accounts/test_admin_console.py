@@ -93,6 +93,25 @@ class AdminConsoleTests(TestCase):
         self.assertContains(self.client.get(sections[-1]), contact.message)
         self.assertContains(self.client.get(detail), f'href="{sections[-1]}"')
 
+    def test_workspace_highlights_the_current_section(self):
+        self.sign_in()
+        contact = Contact.objects.create(user=self.reporter, email=self.reporter.email, message='確認用')
+        post_detail = reverse('admin_side:post-detail', args=[self.pending.pk])
+        contact_detail = reverse('contact-admin-detail', args=[contact.pk])
+        sections = ('dashboard', 'posts', 'reports', 'contacts')
+        routes = [(reverse(f'admin_side:{section}'), {}, section) for section in sections]
+        routes += [
+            (post_detail, {}, 'posts'),
+            (post_detail, {'source': 'reports'}, 'reports'),
+            (contact_detail, {}, 'contacts'),
+        ]
+        for url, query, section in routes:
+            with self.subTest(url=url, query=query):
+                response = self.client.get(url, query)
+                section_url = reverse(f'admin_side:{section}')
+                self.assertContains(response, 'class="nav-item active"', count=1)
+                self.assertContains(response, f'class="nav-item active" aria-current="true" href="{section_url}"')
+
     def test_contact_status_can_be_changed_only_by_admin_post_with_csrf(self):
         contact = Contact.objects.create(user=self.reporter, email=self.reporter.email, message='確認用')
         url = reverse('admin_side:contact-status', args=[contact.pk])

@@ -6,6 +6,7 @@ const options = [
   { value: false, label: '本人のみ公開', description: '投稿した本人だけが閲覧できます' },
 ] as const;
 
+// 投稿を公開するか自分だけに公開するかの選択肢を表示する。
 export function PostVisibilityOptions({ value, onChange, disabled = false }: {
   value: boolean;
   onChange: (value: boolean) => void;

@@ -8,6 +8,7 @@ EARTH_RADIUS_METERS = 6371008.8
 
 
 def viewer_coordinates(request, required=False):
+    # 閲覧者の緯度・経度をHTTPヘッダーから取り出し、欠落や不正値を区別する。
     values = (request.headers.get('X-Viewer-Latitude'), request.headers.get('X-Viewer-Longitude'))
     if not required and values == (None, None):
         return None
@@ -34,6 +35,7 @@ def validated_coordinates(values):
 
 
 def distance_meters(latitude, longitude, other_latitude, other_longitude):
+    # 地球を球として近似し、2地点間の距離をメートルで求める。
     lat1, lat2 = map(math.radians, (latitude, other_latitude))
     delta_lat = lat2 - lat1
     delta_lon = math.radians(other_longitude - longitude)
@@ -42,6 +44,7 @@ def distance_meters(latitude, longitude, other_latitude, other_longitude):
 
 
 def within_radius(queryset, coordinates, radius_meters):
+    # 緯度で候補を絞り、距離を測って指定半径の境界を含む投稿だけを返す。
     latitude, longitude = coordinates
     delta = math.degrees(radius_meters / EARTH_RADIUS_METERS)
     # 先に緯度の帯で候補を絞り、距離は球面上で計算（日付変更線にも対応）。

@@ -26,12 +26,14 @@ const DISPLAY_EMOJIS = REACTION_EMOJIS.filter((e) => e !== '.') as ReactionEmoji
  * タップで選択、同じものを再タップで取り消し、別のものをタップで切り替え
  * APIの結果を待たずに画面を即時更新し、失敗時は元の状態に戻す（楽観的UI更新）
  */
+// 投稿のリアクション数と、自分が選んだ絵文字を表示する。
 export function ReactionBar({ postId, token }: Props) {
   const [state, setState] = useState<ReactionState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // マウント時にリアクション一覧を取得する
+  // サーバーから絵文字ごとの件数と自分のリアクションを読み込む。
   const load = useCallback(async () => {
     try {
       setError(null);
@@ -46,6 +48,7 @@ export function ReactionBar({ postId, token }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
+  // 同じ絵文字なら取り消し、別の絵文字なら以前の選択を取り消して新しい反応を送信する。
   const handlePress = async (emoji: ReactionEmoji) => {
     if (!state) return;
     const prev = state; // API失敗時に戻すための保存

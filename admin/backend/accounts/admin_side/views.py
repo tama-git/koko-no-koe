@@ -39,8 +39,10 @@ REVIEW_ACTIONS = {
 
 
 def admin_required(view):
+    # ログイン済みの管理者アカウントだけに画面や操作を許可する。
     @wraps(view)
     def guarded(request, *args, **kwargs):
+        # ログイン後にアカウント種別を確認し、管理者であれば元のビューを実行する。
         if not is_admin_account(request.user):
             raise PermissionDenied('管理者アカウントでログインしてください。')
         return view(request, *args, **kwargs)
@@ -49,6 +51,7 @@ def admin_required(view):
 @never_cache
 @require_http_methods(['GET', 'POST'])
 def admin_login_view(request):
+    # ログインフォームを表示し、認証に成功した管理者を概要画面に案内する。
     if request.method == 'POST':
         form = AdminLoginForm(data=request.POST, request=request)
         if form.is_valid():
@@ -66,6 +69,7 @@ def admin_login_view(request):
 @require_GET
 @admin_required
 def admin_dashboard_view(request, section='overview'):
+    # 概要を集計し、各一覧では検索条件を適用してからページ分けして表示する。
     keyword = request.GET.get('q', '').strip()[:200]
     date_value = request.GET.get('date', '')
     try:
@@ -153,6 +157,7 @@ def admin_dashboard_view(request, section='overview'):
 
 
 def _id_search(keyword, *fields):
+    # 検索語が半角数字のときだけ、指定されたID項目のいずれかとの完全一致を調べる。
     if keyword.isascii() and keyword.isdecimal() and len(keyword) <= 19:
         value = int(keyword)
         if value <= 2**63 - 1:
@@ -164,6 +169,7 @@ def _id_search(keyword, *fields):
 @require_POST
 @admin_required
 def admin_post_hide_from_list(request, pk):
+    # 投稿一覧で公開投稿を管理者非表示にし、元の検索条件を保って一覧に戻る。
     updated = Post.objects.filter(pk=pk, is_public=True, admin_hidden_at__isnull=True).update(
         admin_hidden_at=timezone.now(),
         admin_hidden_by_id=request.user.pk,
@@ -181,6 +187,7 @@ def admin_post_hide_from_list(request, pk):
 @require_POST
 @admin_required
 def admin_contact_status_view(request, pk):
+    # 問い合わせの対応状況を保存し、操作元の一覧または詳細に戻る。
     status = request.POST.get('status')
     if status not in ('resolved', 'pending'):
         return HttpResponseBadRequest('お問い合わせの対応状態を確認できませんでした。')
@@ -199,6 +206,7 @@ def admin_contact_status_view(request, pk):
 @require_GET
 @admin_required
 def admin_post_detail_view(request, pk):
+    # 投稿とその通報を取得し、戻り先の一覧と実行できる対応操作を詳細画面へ渡す。
     post = get_object_or_404(Post.objects.select_related('admin_hidden_by'), pk=pk)
     reports = post.reports.order_by('-created_at', '-pk')
     state = post.report_status or Post.ReportStatus.PENDING
@@ -216,6 +224,7 @@ def admin_post_detail_view(request, pk):
 @require_POST
 @admin_required
 def admin_post_review_view(request, pk):
+    # 最新の通報と対応状態を照合し、対応状態の更新または管理者非表示を行う。
     form = PostReviewForm(request.POST)
     if not form.is_valid():
         return HttpResponseBadRequest('通報対応の操作を確認できませんでした。')
@@ -257,6 +266,7 @@ def admin_post_review_view(request, pk):
 @require_GET
 @admin_required
 def admin_post_photo_view(request, pk):
+    # 管理者が閲覧できる投稿の写真を、閲覧用の画像に変換して返す。
     post = get_object_or_404(Post, Q(is_public=True) | Q(admin_hidden_at__isnull=False), pk=pk)
     return post_photo_preview(post.image)
 

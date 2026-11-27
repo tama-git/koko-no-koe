@@ -13,11 +13,14 @@ type Props = {
   user: { name: string; email: string };
 };
 
+// 設定メニューからパスワード変更、ヘルプ、問い合わせ、退会などの画面を開く。
 export function UtilityScreen({ onLogout, onOpenTutorial, token, user }: Props) {
   const [screen, setScreen] = useState<'changePassword' | 'deleteAccount' | 'help' | 'contact' | null>(null);
+  // 設定の個別画面を閉じ、設定メニューへ戻す。
   const closeScreen = () => setScreen(null);
   const screenProps = { token, onClose: closeScreen };
 
+  // 会員にログアウトを確認し、同意されたらログアウト処理を呼ぶ。
   const handleLogout = () => {
     Alert.alert('確認', 'ログアウトしますか？', [
       { text: 'キャンセル', style: 'cancel' },

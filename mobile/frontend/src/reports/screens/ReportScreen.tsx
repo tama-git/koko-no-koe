@@ -5,6 +5,7 @@ import { REPORT_CATEGORIES, REPORT_DETAILS_LIMIT, submitReport, validateReport }
 import type { ReportCategory } from '../reportService';
 import { uiColors } from '../../shared/uiColors';
 
+// 通報理由と補足を入力し、確認してから対象投稿の通報を送信する画面。
 export function ReportScreen({ postId, message, token, onClose }: {
   postId: number;
   message: string;
@@ -17,6 +18,7 @@ export function ReportScreen({ postId, message, token, onClose }: {
   const [sending, setSending] = useState(false);
   const pending = useRef(false);
 
+  // 入力中の通報を取りやめられるようにする。
   const cancel = () => {
     if (pending.current) return;
     Keyboard.dismiss();
@@ -26,6 +28,7 @@ export function ReportScreen({ postId, message, token, onClose }: {
     ]);
   };
 
+  // 通報内容を送信し、完了またはエラーを表示する。
   const send = async (selected: ReportCategory) => {
     if (pending.current) return;
     pending.current = true;
@@ -42,6 +45,7 @@ export function ReportScreen({ postId, message, token, onClose }: {
     }
   };
 
+  // 通報内容を確認し、会員の同意を得てから送信する。
   const confirm = () => {
     if (pending.current) return;
     Keyboard.dismiss();

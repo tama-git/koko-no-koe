@@ -49,6 +49,7 @@ def json_fields(request, *fields):
 
 
 def credentials(request):
+    # ログイン用JSONからメールアドレスとパスワードを取り出し、メールアドレスを正規化する。
     values = json_fields(request, 'email', 'password')
     if values is None:
         return None
@@ -73,18 +74,21 @@ def valid_password(password):
 
 
 def registration_id(pending):
+    # 登録途中の申請を識別するために署名付きIDを作る。
     return salted_hmac(
         'mobile-registration-id', pending.password_hash, algorithm='sha256',
     ).hexdigest()
 
 
 def registration_code_hash(pending, code):
+    # 登録申請にひも付けて認証コードをハッシュ化する。
     return salted_hmac(
         'mobile-registration-code', f'{pending.password_hash}:{code}', algorithm='sha256',
     ).hexdigest()
 
 
 def pending_registration(email, supplied_id):
+    # メールアドレスと登録IDが一致する申請を探す。
     pending = PendingMobileRegistration.objects.filter(email=email, used_at__isnull=True).first()
     if pending and secrets.compare_digest(registration_id(pending), supplied_id):
         return pending
@@ -92,6 +96,7 @@ def pending_registration(email, supplied_id):
 
 
 def send_registration_code(pending, password_hash):
+    # 新しい認証コードで登録申請を更新し、送信処理へ渡す。
     now = timezone.now()
     registrations = PendingMobileRegistration.objects
     if pending and pending.created_at > now - RESEND_INTERVAL:
@@ -117,6 +122,7 @@ def send_registration_code(pending, password_hash):
 
 
 def deliver_registration_code(registration, code, code_hash):
+    # 認証メールを送り、送信できなかったコードを期限切れにする。
     try:
         sent = send_mail(
             '【ここの声】会員登録の認証コード',
@@ -141,6 +147,7 @@ def deliver_registration_code(registration, code, code_hash):
 @csrf_exempt  # Cookie による認証は使用しない JSON API。
 @require_POST
 def start_registration(request):
+    # 会員登録の入力を確認し、メール認証を開始する。
     values = credentials(request)
     if values is None:
         return error('送信内容を確認してください。', 400)
@@ -167,6 +174,7 @@ def start_registration(request):
 
 
 def registration_request(request, *fields):
+    # 認証・再送に共通する入力と、処理対象の登録申請を確認する。
     values = json_fields(request, 'email', 'registration_id', *fields)
     if values is None:
         return None
@@ -180,6 +188,7 @@ def registration_request(request, *fields):
 @csrf_exempt
 @require_POST
 def resend_registration(request):
+    # 再送条件を満たす登録申請に新しい認証コードを送る。
     values = registration_request(request)
     if values is None:
         return error('送信内容を確認してください。', 400)
@@ -192,6 +201,7 @@ def resend_registration(request):
 
 
 def issue_mobile_session(user):
+    # モバイル用トークンを発行し、サーバーには照合用のハッシュを保存する。
     token = secrets.token_urlsafe(32)
     MobileSession.objects.create(
         user=user,

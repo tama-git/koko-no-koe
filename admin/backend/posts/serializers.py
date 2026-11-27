@@ -22,12 +22,14 @@ class PostSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'created_at')
 
     def get_is_own(self, obj):
+        # 閲覧している会員が投稿者本人かを判定する。
         request = self.context.get('request')
         if request is not None and request.user.is_authenticated:
             return obj.user_id_id == request.user.pk
         return False
 
     def validate(self, attrs):
+        # 本文または写真があることと写真の枚数を確認し、添付写真を保存用に変換する。
         request = self.context.get('request')
         if request is not None and len(request.FILES.getlist('image')) > 1:
             raise serializers.ValidationError('写真は1枚まで添付できます。')
@@ -41,6 +43,7 @@ class PostSerializer(serializers.ModelSerializer):
         return attrs
 
     def to_representation(self, instance):
+        # 保存された投稿を応答に変換し、写真があれば閲覧権限を確認する取得先を返す。
         data = super().to_representation(instance)
         if instance.image:
             # 保存先を直接公開せず、認証と閲覧条件を確認する画像取得URLを返す。
@@ -63,6 +66,7 @@ class PostDetailSerializer(PostListSerializer):
         read_only_fields = (*PostListSerializer.Meta.read_only_fields, 'place_name', 'place_attribution', 'manual_place')
 
     def get_can_report(self, post):
+        # 閲覧中の投稿に対して通報操作を表示できるか判定する。
         return post.is_public is True and not post.is_admin_hidden and post.user_id_id != self.context['request'].user.pk
 
 
@@ -79,6 +83,7 @@ class PostPlaceTagSerializer(serializers.Serializer):
     place_id = serializers.JSONField(allow_null=True)
 
     def validate_place_id(self, value):
+        # 施設IDの形式を確認し、自動設定に戻す指定として空の値も受け付ける。
         if value is not None and not valid_place_id(value):
             raise serializers.ValidationError('有効な施設IDを指定してください。')
         return value
@@ -89,6 +94,7 @@ class PostReportSerializer(serializers.Serializer):
     details = serializers.CharField(max_length=100, allow_blank=True, default='')
 
     def validate(self, attrs):
+        # 通報で「その他」を選んだ場合に、補足が入力されていることを確認する。
         if attrs['category'] == PostReport.Category.OTHER and not attrs['details']:
             raise serializers.ValidationError({'details': 'その他を選んだ場合は理由を入力してください。'})
         return attrs

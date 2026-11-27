@@ -5,10 +5,12 @@ export type DisplayPosition = Pick<Coordinates, 'latitude' | 'longitude'> & { du
 
 type PositionSample = Coordinates & { speed: number | null; timestamp: number };
 
+// 2つの位置サンプルの間の距離をメートルで求める。
 function distance(a: Coordinates | DisplayPosition, b: Coordinates | DisplayPosition) {
   return distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude);
 }
 
+// 最初に取得した座標を、アニメーションを伴わない地図表示の基準にする。
 export function initialDisplayPosition({ latitude, longitude }: Coordinates): DisplayPosition {
   return { latitude, longitude, durationMs: 0 };
 }

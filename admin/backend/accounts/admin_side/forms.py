@@ -19,11 +19,13 @@ class AdminLoginForm(forms.Form):
     )
 
     def __init__(self, *args, request=None, **kwargs):
+        # 認証に使うリクエストと、認証結果を保持する欄を用意する。
         super().__init__(*args, **kwargs)
         self.request = request
         self.user_cache = None
 
     def clean(self):
+        # 入力されたメールアドレスとパスワードで、利用可能な管理者アカウントかを確認する。
         cleaned_data = super().clean()
         email = cleaned_data.get('email')
         password = cleaned_data.get('password')
@@ -37,6 +39,7 @@ class AdminLoginForm(forms.Form):
         return cleaned_data
 
     def get_user(self):
+        # フォームの検証に成功した管理者をログイン処理へ渡す。
         return getattr(self, 'user_cache', None)
 
 

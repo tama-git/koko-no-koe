@@ -42,6 +42,7 @@ export function useChangePassword(token: string, onSuccess: () => void) {
   // busy の ref 版：非同期処理中の二重送信を防ぐ
   const busyRef = useRef(false);
 
+  // 現在と新しいパスワードを確認し、変更結果に応じて画面の状態を更新する。
   async function handleSubmit() {
     if (busyRef.current) return;
     // まずクライアント側でバリデーション

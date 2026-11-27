@@ -13,11 +13,13 @@ type Props = {
   onClose: () => void; // 戻るボタン・送信完了後に呼ぶ
 };
 
+// 問い合わせの本文を入力し、送信結果を確認する画面。
 export function ContactScreen({ token, onClose }: Props) {
   const [messageText, setMessageText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 入力された問い合わせ本文を、モバイル認証を使ってDjangoへ送る。
   const handleSubmit = async () => {
     if (!messageText.trim()) {
       setError('お問い合わせ内容を入力してください。');

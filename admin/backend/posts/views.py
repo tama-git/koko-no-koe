@@ -38,12 +38,15 @@ class PostAccess:
     serializer_class = PostSerializer
 
     def get_queryset(self):
+        # 投稿を作成日時とIDの新しい順で取得する共通処理。
         return Post.objects.order_by('-created_at', '-id')
 
     def public_filter(self):
+        # 公開設定が有効で、管理者に非表示にされていない投稿の条件を作る。
         return Q(is_public=True, admin_hidden_at__isnull=True)
 
     def finalize_response(self, request, response, *args, **kwargs):
+        # 投稿APIのレスポンスを共有キャッシュや端末のHTTPキャッシュに保存させない。
         response = super().finalize_response(request, response, *args, **kwargs)
         response['Cache-Control'] = 'private, no-store'
         return response
@@ -54,14 +57,17 @@ class PostListCreateAPIView(PostAccess, generics.ListCreateAPIView):
     投稿の一覧取得（GET）と新規作成（POST）を行うAPIビュー
     """
     def get_queryset(self):
+        # ログイン中の会員が作成した投稿だけを一覧に返す。
         return super().get_queryset().filter(user_id=self.request.user)
 
     def get_serializer_class(self):
+        # 自分の投稿一覧の読み出し用と、新規投稿の入力確認用の形式を切り替える。
         if self.request.method == 'GET':
             return PostListSerializer
         return super().get_serializer_class()
 
     def perform_create(self, serializer):
+        # 先に投稿を保存し、表示用の地名を取得できたときだけ別項目に保存する。
         post = self._save_post(serializer)
         place = lookup_cached_post_place(self.request.user.pk, post.latitude, post.longitude)
         if place is not None:
@@ -72,6 +78,7 @@ class PostListCreateAPIView(PostAccess, generics.ListCreateAPIView):
                 logger.warning('Could not save the post place name.')
 
     def _save_post(self, serializer):
+        # 投稿と必要な写真・サムネイルを保存し、途中で失敗した場合は作成した画像を片付ける。
         # 投稿者は端末からのIDではなく、ログイン済み会員から決める。
         photo = serializer.validated_data.get('image')
         if photo is None:
@@ -126,6 +133,7 @@ class PostPlacePreviewAPIView(PostAccess, generics.GenericAPIView):
     throttle_classes = [PostPlacePreviewThrottle]
 
     def post(self, request):
+        # 確定した投稿座標から、確認画面に表示する地名と出典を取得する。
         data = self.get_serializer(data=request.data)
         data.is_valid(raise_exception=True)
         place = lookup_cached_post_place(request.user.pk, **data.validated_data)
@@ -139,6 +147,7 @@ class PublicPostListAPIView(PostAccess, generics.ListAPIView):
     serializer_class = PostListSerializer
 
     def list(self, request, *args, **kwargs):
+        # 地図ピン用の公開座標と、現在地から閲覧できる投稿一覧を別々に返す。
         queryset = self.get_queryset()
         viewer = request.user
         try:
@@ -168,6 +177,7 @@ class PublicPostListAPIView(PostAccess, generics.ListAPIView):
 
 class ReadablePostAccess(PostAccess):
     def get_queryset(self):
+        # 詳細・写真の取得時に、投稿者本人か、サーバーの閲覧条件を満たす会員かを判定する。
         queryset = super().get_queryset().filter(pk=self.kwargs['pk'])
         viewer = self.request.user
         if queryset.filter(user_id=viewer).exists():
@@ -192,11 +202,13 @@ class PostDetailAPIView(ReadablePostAccess, generics.RetrieveDestroyAPIView):
     serializer_class = PostDetailSerializer
 
     def get_queryset(self):
+        # 削除は本人の投稿に限定し、詳細の取得には共通の閲覧条件を使う。
         if self.request.method == 'DELETE':
             return PostAccess.get_queryset(self).filter(user_id=self.request.user)
         return super().get_queryset()
 
     def perform_destroy(self, instance):
+        # 投稿を削除し、その画像がほかの投稿から参照されていなければ削除する。
         image_name = instance.image.name
         with transaction.atomic():
             deleted, _ = instance.delete()
@@ -213,6 +225,7 @@ class PostVisibilityAPIView(PostAccess, generics.GenericAPIView):
     parser_classes = [JSONParser]
 
     def patch(self, request, pk):
+        # 本人の投稿の公開状態を更新する。
         data = request.data
         if not isinstance(data, dict) or set(data) != {'is_published'} or not isinstance(data['is_published'], bool):
             raise ValidationError({'is_published': '公開または本人のみ公開を選択してください。'})
@@ -235,9 +248,11 @@ class OwnedPostPlaceAPIView(PostAccess, generics.GenericAPIView):
     parser_classes = [JSONParser]
 
     def get_queryset(self):
+        # 場所タグを編集する対象をログイン中の会員の投稿に限定する。
         return super().get_queryset().filter(user_id=self.request.user)
 
     def post_coordinates(self, post):
+        # 保存済み投稿の座標を施設検索で使える形式に検証する。
         coordinates = validated_coordinates((post.latitude, post.longitude))
         if coordinates is None:
             raise ValidationError('保存済みの投稿地点がないため施設を指定できません。')
@@ -248,6 +263,7 @@ class PostPlaceCandidatesAPIView(OwnedPostPlaceAPIView):
     serializer_class = PostPlaceSearchSerializer
 
     def post(self, request, pk):
+        # 保存済み投稿地点を中心に、指定した施設名で場所タグの候補を取得する。
         post = self.get_object()
         request_data = self.get_serializer(data=request.data)
         request_data.is_valid(raise_exception=True)
@@ -263,6 +279,7 @@ class PostPlaceTagAPIView(OwnedPostPlaceAPIView):
     serializer_class = PostPlaceTagSerializer
 
     def patch(self, request, pk):
+        # 選択した施設が投稿地点の250m以内か再確認し、手動タグを保存または解除する。
         post = self.get_object()
         request_data = self.get_serializer(data=request.data)
         request_data.is_valid(raise_exception=True)
@@ -296,6 +313,7 @@ class PostReportAPIView(PostAccess, generics.GenericAPIView):
     serializer_class = PostReportSerializer
 
     def post(self, request, pk):
+        # 他人の公開投稿の通報を保存し、対象投稿を要確認にする。
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         target = self.get_queryset().filter(self.public_filter(), pk=pk).exclude(user_id=request.user)
@@ -318,6 +336,7 @@ class AlreadyHidden(APIException):
 
 class PostHideAPIView(PostAccess, generics.GenericAPIView):
     def post(self, request, pk):
+        # 他人の公開投稿を操作した会員の地図・一覧に表示しないよう記録する。
         target = self.get_queryset().filter(self.public_filter(), pk=pk).exclude(user_id=request.user)
         if not target.exists():
             raise NotFound('非表示にできる投稿が見つかりませんでした。')
@@ -329,6 +348,7 @@ class PostHideAPIView(PostAccess, generics.GenericAPIView):
 
 class PostImageAPIView(ReadablePostAccess, generics.GenericAPIView):
     def get(self, request, *args, **kwargs):
+        # 閲覧できる投稿の写真を返す。本人以外には閲覧用に変換した画像を返す。
         post = self.get_object()
         if not post.image:
             raise NotFound('写真がありません。')
@@ -342,6 +362,7 @@ class PostImageAPIView(ReadablePostAccess, generics.GenericAPIView):
 
 class PostThumbnailAPIView(ReadablePostAccess, generics.GenericAPIView):
     def get(self, request, *args, **kwargs):
+        # 閲覧できる投稿のサムネイルを返し、保存されていなければ404にする。
         image = self.get_object().image
         name = post_thumbnail_name(image.name)
         if not name:

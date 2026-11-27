@@ -37,6 +37,7 @@ type SheetDetail = { id: number } & (
   | { distanceNotice: ReactNode }
 );
 
+// 一覧・詳細・圏外案内を、下部メニュー上の同じシートに表示する。
 export function PostBottomSheet({
   bottomInset, animatedHeight, mode, onSelectMode, list, token, coordinates,
   onSelectPost, detail, onCloseDetail, listOpenRequest,
@@ -187,14 +188,18 @@ export function PostBottomSheet({
     }
   }, [containerHeight, detailId, headerHeight, listHeaderHeight, listOpenRequest, showingDetail, heights, snapTo]);
 
+  // 件数表示のコンパクト段と中間段を切り替える。
   const toggleSheet = () => snapTo(currentLevel.current === 'half' ? 'min' : 'half');
+  // 操作に応じてシートを中間段まで開く。
   const expandSheet = () => snapTo('half');
+  // 指の移動量をドラッグ開始時の高さに反映し、シートを追従させる。
   const moveSheet = (pageY: number) => {
     if (!isDragging.current) return;
     const height = clampSheetHeight(dragStartHeight.current + touchStart.current.y - pageY, heights);
     currentHeight.current = height;
     animatedHeight.setValue(height);
   };
+  // 押した位置からの移動に基づき、タップとドラッグを区別する。
   const didMove = (pageX: number, pageY: number) =>
     Math.max(Math.abs(pageX - touchStart.current.x), Math.abs(pageY - touchStart.current.y)) >= TAP_SLOP;
 
@@ -217,6 +222,7 @@ export function PostBottomSheet({
       if (isDragging.current) snapTo(currentLevel.current);
     },
   };
+  // 指を離した位置とフリック方向に合わせて、シートを所定の高さに収める。
   const finishDrag = ({ nativeEvent: { pageX, pageY, timestamp } }: GestureResponderEvent, onTap?: () => void) => {
     if (!isDragging.current) return;
     if (!moved.current && !didMove(pageX, pageY)) {

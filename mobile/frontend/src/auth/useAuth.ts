@@ -23,6 +23,7 @@ export function useAuth() {
   const busyRef = useRef(false);
   const isRegister = mode === 'register';
 
+  // ログインと会員登録を切り替え、パスワードや途中の認証情報を初期化する。
   function changeMode(nextMode: AuthMode) {
     if (busyRef.current) return;
     setMode(nextMode);
@@ -35,6 +36,7 @@ export function useAuth() {
     setMessage('');
   }
 
+  // 入力内容を確認し、ログイン・認証コード送信・コード確認のいずれかを行う。
   async function handleSubmit() {
     if (busyRef.current) return;
     if (registrationId) {
@@ -74,6 +76,7 @@ export function useAuth() {
     }
   }
 
+  // 登録中の認証コードを再送するか、コードを照合して会員登録を完了する。
   async function submitRegistrationCode(resend: boolean) {
     if (!registrationId || busyRef.current) return;
     busyRef.current = true;
@@ -101,12 +104,14 @@ export function useAuth() {
     }
   }
 
+  // 登録完了画面の確認を記録し、次の画面への遷移を可能にする。
   function continueAfterRegistration() {
     setSession(current => current?.source === 'registration' && !current.completionAcknowledged
       ? { ...current, completionAcknowledged: true }
       : current);
   }
 
+  // サーバーでログアウトし、成功またはセッション失効時に端末のログイン状態を消す。
   async function handleLogout() {
     if (!session || busyRef.current) return;
     busyRef.current = true;

@@ -2,8 +2,6 @@
 
 {% block title %}管理コンソール 概要{% endblock %}
 
-{% block overview_class %}active{% endblock %}
-
 {% block account_actions %}
   <form method="post" action="{% url 'admin_side:logout' %}">
     {% csrf_token %}

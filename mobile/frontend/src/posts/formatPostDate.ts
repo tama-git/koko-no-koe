@@ -10,6 +10,7 @@ const minute = 60_000;
 const hour = 60 * minute;
 const day = 24 * hour;
 
+// 投稿日時を、日本時間の日付または投稿からの経過時間に変換する。
 export function formatPostDate(value: string, now = Date.now()): string {
   const postedAt = Date.parse(value);
   if (!Number.isFinite(postedAt) || !Number.isFinite(now)) return '';

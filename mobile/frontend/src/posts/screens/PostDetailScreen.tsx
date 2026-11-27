@@ -24,6 +24,7 @@ export type PostDetailSheetControls = {
   onHeaderLayout: (event: LayoutChangeEvent) => void;
 };
 
+// 取得した写真を元の縦横比で表示し、読み込みに失敗したら親画面に知らせる。
 function PostDetailPhoto({ uri, onError }: { uri: string; onError: () => void }) {
   const [aspectRatio, setAspectRatio] = useState(4 / 3);
 
@@ -41,12 +42,14 @@ function PostDetailPhoto({ uri, onError }: { uri: string; onError: () => void })
   );
 }
 
+// 閲覧のために必要になった場合に端末の現在地を取得する。
 async function measureViewerCoordinates() {
   const location = await getCurrentLocation();
   if (location.status !== 'ready') throw new PostApiError(locationUnavailable, 400);
   return location.coordinates;
 }
 
+// 例外から画面に表示するメッセージを取り出し、取得できなければ既定文言を使う。
 function readErrorMessage(reason: unknown, fallback: string) {
   if (reason instanceof PostApiError) {
     if (reason.status === 400) return locationUnavailable;
@@ -59,6 +62,7 @@ function readErrorMessage(reason: unknown, fallback: string) {
 /**
  * 投稿データの型定義
  */
+// 一件の投稿詳細を取得し、閲覧内容と権限に応じた投稿操作を表示する。
 export function PostDetailScreen({
   route, navigation, token, onDeleted, onHidden, onVisibilityChanged, onPlaceChanged, viewerAccess, sheet,
 }: {
@@ -111,6 +115,7 @@ export function PostDetailScreen({
     setError('');
     setImageUri(null);
     setImageError('');
+    // 閲覧に必要な位置情報を確認し、選択中の投稿本文と詳細情報を取得する。
     const load = async () => {
       try {
         const access = currentViewerAccess.current;
@@ -154,6 +159,7 @@ export function PostDetailScreen({
     if (imagePostId === null || imagePostId !== postId) return;
     let active = true;
     setImageError('');
+    // 本文とは別に、閲覧条件を確認して投稿写真を取得する。
     const load = async () => {
       try {
         const access = currentViewerAccess.current;
@@ -173,6 +179,7 @@ export function PostDetailScreen({
     return () => { active = false; };
   }, [imagePostId, postId, token, needsViewerLocation, imageRevision]);
 
+  // 自分の投稿を削除し、結果に応じて一覧を更新する。
   const removePost = async () => {
     if (!isOwnPost || !onDeleted || deletionPending.current || visibilityPending.current) return;
     deletionPending.current = true;
@@ -197,6 +204,7 @@ export function PostDetailScreen({
     onDeleted();
   };
 
+  // 本文と写真が削除されることを示し、会員が確認してから削除を実行する。
   const confirmDeletion = () => {
     Alert.alert('投稿を削除しますか？', '本文と写真が削除されます。削除後は元に戻せません。', [
       { text: 'キャンセル', style: 'cancel' },
@@ -204,6 +212,7 @@ export function PostDetailScreen({
     ]);
   };
 
+  // 本人の投稿の公開設定をサーバーへ保存して、詳細と一覧の表示を更新する。
   const saveVisibility = async (next: boolean) => {
     if (!canChangeVisibility || !onVisibilityChanged || visibilityPending.current || deletionPending.current) return;
     visibilityPending.current = true;
@@ -222,6 +231,7 @@ export function PostDetailScreen({
     }
   };
 
+  // 変更先の公開範囲を伝え、会員が確認してから保存する。
   const confirmVisibilityChange = (next: boolean) => {
     if (!canChangeVisibility || (post.is_published === true) === next) return;
     Alert.alert(
@@ -269,6 +279,7 @@ export function PostDetailScreen({
     ]);
   };
   
+  // 本人には管理操作、他人の投稿には通報と個別の非表示を表示する。
   const openPostActions = () => {
     if (Platform.OS === 'ios') {
       if (isOwnPost) {

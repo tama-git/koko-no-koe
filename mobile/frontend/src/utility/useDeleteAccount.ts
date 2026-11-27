@@ -15,6 +15,7 @@ export function useDeleteAccount(token: string, onSuccess: () => void) {
   // busy の ref 版：非同期処理中の二重送信を防ぐ
   const busyRef = useRef(false);
 
+  // 入力されたパスワードで退会を申請し、送信結果を画面に反映する。
   async function handleSubmit() {
     if (busyRef.current) return;
 

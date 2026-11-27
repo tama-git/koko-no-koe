@@ -1,7 +1,6 @@
 {% extends 'admin_side/base.html' %}
 
 {% block title %}投稿 #{{ post.pk }} の詳細{% endblock %}
-{% block overview_class %}active{% endblock %}
 
 {% block account_actions %}
   <form method="post" action="{% url 'admin_side:logout' %}">

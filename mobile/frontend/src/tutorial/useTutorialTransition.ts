@@ -3,12 +3,14 @@ import { Animated, Easing } from 'react-native';
 
 import { nextTutorialPage } from './tutorialPages';
 
+// 指定した遅延と時間で表示を変化させるアニメーションを作る。
 function animate(value: Animated.Value, toValue: number, duration: number, delay = 0) {
   return Animated.timing(value, {
     toValue, duration, delay, easing: Easing.out(Easing.cubic), useNativeDriver: true,
   });
 }
 
+// チュートリアルのページ遷移と終了演出を管理し、操作の重複を防ぐ。
 export function useTutorialTransition(reduceMotion: boolean, onExit: () => void) {
   const [page, setPage] = useState(0);
   const [moving, setMoving] = useState(false);
@@ -44,6 +46,7 @@ export function useTutorialTransition(reduceMotion: boolean, onExit: () => void)
 
     let fadeIn: Animated.CompositeAnimation | undefined;
     if (isChangingPage) {
+      // ページ切り替えを完了し、次の操作を受け付ける。
       const unlock = () => {
         phase.current = 'idle';
         setMoving(false);
@@ -66,6 +69,7 @@ export function useTutorialTransition(reduceMotion: boolean, onExit: () => void)
 
   useEffect(() => () => fade.current?.stop(), []);
 
+  // 現在の内容をフェードアウトし、移動先のページに切り替える。
   const go = useCallback((direction: -1 | 1) => {
     if (phase.current !== 'idle') return;
     const next = nextTutorialPage(page, direction);
@@ -83,6 +87,7 @@ export function useTutorialTransition(reduceMotion: boolean, onExit: () => void)
     });
   }, [page, opacity]);
 
+  // 「はじめる」または「スキップ」で終了し、呼び出し元へ制御を戻す。
   const exit = () => {
     if (phase.current === 'closing') return;
     phase.current = 'closing';

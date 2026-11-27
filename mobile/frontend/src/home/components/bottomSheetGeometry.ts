@@ -14,6 +14,7 @@ export const MIN_SHEET_HEADER_HEIGHT = 44;
 export const LIST_MIDDLE_RATIO = 0.4;
 export const PIN_DETAIL_MIDDLE_RATIO = 0.5;
 
+// 利用できる高さとヘッダーの実測値から、シート各段階の高さを計算する。
 export function getSheetHeights(containerHeight: number, headerHeight: number, middleRatio = LIST_MIDDLE_RATIO,
   allowHidden = false): SheetHeights {
   const full = Math.max(0, containerHeight);
@@ -21,14 +22,17 @@ export function getSheetHeights(containerHeight: number, headerHeight: number, m
   return { ...(allowHidden ? { hidden: 0 } : {}), min, half: Math.max(min, full * middleRatio), full };
 }
 
+// 指定した段階の高さを返す。利用できない段階はコンパクト段の高さにそろえる。
 export function getSheetLevelHeight(heights: SheetHeights, level: SheetLevel): number {
   return heights[level] ?? heights.min;
 }
 
+// ドラッグで指定された高さを、シートの下限から上限の間に収める。
 export function clampSheetHeight(height: number, heights: SheetHeights): number {
   return Math.max(heights.hidden ?? heights.min, Math.min(height, heights.full));
 }
 
+// 残りの移動距離から、シートが所定の高さへ移動する時間を求める。
 export function getSheetSettleDuration(fromHeight: number, toHeight: number): number {
   return Math.abs(toHeight - fromHeight) * 1000 / SHEET_SETTLE_POINTS_PER_SECOND;
 }
@@ -40,6 +44,7 @@ function getClosestSheetLevel(height: number, heights: SheetHeights, levels: rea
       ? level : closest);
 }
 
+// 指を離した位置に近い段階を選び、短いフリックなら方向に合わせて一段進める。
 export function getSheetLevelAfterDrag(startHeight: number, dy: number, elapsedMs: number, heights: SheetHeights): SheetLevel {
   const levels: readonly SheetLevel[] = heights.hidden === undefined ? detailLevels : listLevels;
   const start = getClosestSheetLevel(startHeight, heights, levels);

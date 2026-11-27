@@ -26,6 +26,7 @@ type Props = {
   onCreated: () => void;
 };
 
+// 確認画面で写真をカードの幅と高さに収め、縦横比を保って表示する。
 function ConfirmPhoto({ uri, initialAspectRatio }: { uri: string; initialAspectRatio?: number }) {
   const [availableWidth, setAvailableWidth] = useState(0);
   const [aspectRatio, setAspectRatio] = useState(
@@ -52,6 +53,7 @@ function ConfirmPhoto({ uri, initialAspectRatio }: { uri: string; initialAspectR
   );
 }
 
+// 場所・写真・本文・公開範囲を投稿前のプレビューとして表示する。
 export function PostConfirmScreen({ route, navigation, token, onCreated }: Props) {
   const { message, imageUri, imageAspectRatio, latitude, longitude, isPublished, imageMimeType, imageFileName, placePreview } = route.params;
   const hasPostLocation = Number.isFinite(latitude) && Math.abs(latitude) <= 90 &&
@@ -63,6 +65,7 @@ export function PostConfirmScreen({ route, navigation, token, onCreated }: Props
   const busy = useRef(false);
   const [loading, setLoading] = useState(false); // 送信中の通信状態管理
 
+  // 送信の多重実行を防ぎながら確定済みの内容を保存し、保存した投稿へ進む。
   const handleFinalSubmit = async () => {
     if (busy.current || !hasPostLocation || loadingPlace) return;
     busy.current = true;
